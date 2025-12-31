@@ -27,6 +27,7 @@ Stream_Close_Func :: #type proc(strm: ^Strm_Stream, data: Strm_Value) -> int
 
 // Stream structure
 Strm_Stream :: struct {
+	type:       Ptr_Type,            // MUST be first field - identifies this as a stream
 	mode:       Stream_Mode,
 	flags:      Stream_Flags,
 	start_func: Stream_Start_Func,
@@ -62,6 +63,7 @@ Node_Error :: struct {
 // Create a new stream
 strm_stream_new :: proc(mode: Stream_Mode, start_func: Stream_Start_Func, close_func: Stream_Close_Func, data: rawptr) -> ^Strm_Stream {
 	strm := new(Strm_Stream)
+	strm.type = .Stream    // Ptr_Type tag for value system
 	strm.mode = mode
 	strm.flags = {}
 	strm.start_func = start_func

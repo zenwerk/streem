@@ -307,42 +307,42 @@ Tags:
 ```
 
 ### 8.2 Value struct and operations
-- [ ] `Strm_Value` - u64 type alias
-- [ ] `strm_value_tag()` - extract tag from value
-- [ ] `strm_value_val()` - extract payload from value
+- [x] `Strm_Value` - u64 type alias
+- [x] `strm_value_tag()` - extract tag from value
+- [x] `strm_value_val()` - extract payload from value
 
 ### 8.3 Value constructors
-- [ ] `strm_nil_value()` - create nil (PTR tag with 0 payload)
-- [ ] `strm_bool_value(bool)` - create boolean
-- [ ] `strm_int_value(i32)` - create integer
-- [ ] `strm_float_value(f64)` - create float (raw bits, no tag for valid floats)
-- [ ] `strm_cfunc_value(cfunc)` - create C function reference
-- [ ] `strm_ptr_value(ptr)` - create pointer value
-- [ ] `strm_foreign_value(ptr)` - create foreign pointer
+- [x] `strm_nil_value()` - create nil (PTR tag with 0 payload)
+- [x] `strm_bool_value(bool)` - create boolean
+- [x] `strm_int_value(i32)` - create integer
+- [x] `strm_float_value(f64)` - create float (raw bits, no tag for valid floats)
+- [x] `strm_cfunc_value(cfunc)` - create C function reference
+- [x] `strm_ptr_value(ptr)` - create pointer value
+- [x] `strm_foreign_value(ptr)` - create foreign pointer
 
 ### 8.4 Value extractors
-- [ ] `strm_value_bool()` - extract boolean
-- [ ] `strm_value_int()` - extract integer
-- [ ] `strm_value_float()` - extract float
-- [ ] `strm_value_cfunc()` - extract C function
-- [ ] `strm_value_ptr()` - extract pointer with type check
+- [x] `strm_value_bool()` - extract boolean
+- [x] `strm_value_int()` - extract integer
+- [x] `strm_value_float()` - extract float
+- [x] `strm_value_cfunc()` - extract C function
+- [x] `strm_value_ptr()` - extract pointer with type check
 
 ### 8.5 Type predicates
-- [ ] `strm_nil_p()` - is nil?
-- [ ] `strm_bool_p()` - is boolean?
-- [ ] `strm_int_p()` - is integer?
-- [ ] `strm_float_p()` - is float?
-- [ ] `strm_number_p()` - is int or float?
-- [ ] `strm_cfunc_p()` - is C function?
-- [ ] `strm_string_p()` - is string?
-- [ ] `strm_array_p()` - is array?
-- [ ] `strm_lambda_p()` - is lambda?
-- [ ] `strm_stream_p()` - is stream?
+- [x] `strm_nil_p()` - is nil?
+- [x] `strm_bool_p()` - is boolean?
+- [x] `strm_int_p()` - is integer?
+- [x] `strm_float_p()` - is float?
+- [x] `strm_number_p()` - is int or float?
+- [x] `strm_cfunc_p()` - is C function?
+- [x] `strm_string_p()` - is string?
+- [x] `strm_array_p()` - is array?
+- [x] `strm_lambda_p()` - is lambda?
+- [x] `strm_stream_p()` - is stream?
 
 ### 8.6 Value equality and conversion
-- [ ] `strm_value_eq()` - compare two values
-- [ ] `strm_to_str()` - convert any value to string
-- [ ] `strm_inspect()` - debug representation
+- [x] `strm_value_eq()` - compare two values
+- [x] `strm_to_str()` - convert any value to string
+- [x] `strm_inspect()` - debug representation
 
 ---
 
@@ -769,7 +769,7 @@ odin test streem_odin/
 | 5. Precedence | **Completed** | Precedence climbing implementation |
 | 6. Parser Test | **Completed** | 71 tests passing |
 | 7. Main (Parse) | **Completed** | CLI for parsing (file, -e, -c, -v) |
-| 8. Values | Not Started | NaN-boxing |
+| 8. Values | **Completed** | NaN-boxing with 76 tests passing |
 | 9. Str/Array | Not Started | String/Array types |
 | 10. Namespace | Not Started | Scope management |
 | 11. Evaluator | Not Started | AST execution |
