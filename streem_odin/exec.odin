@@ -392,7 +392,8 @@ lambda_call :: proc(strm: ^Strm_Stream, state: ^Strm_State, lambda_node: ^Node, 
 		// Bind arguments
 		if data.args != nil && data.args.type == .Args {
 			arg_names := &data.args.data.(Node_Args)
-			for i, name in arg_names.names {
+			for i := 0; i < len(arg_names.names); i += 1 {
+				name := arg_names.names[i]
 				if i < len(args) {
 					strm_var_def(local, name, args[i])
 				} else {

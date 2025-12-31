@@ -87,49 +87,49 @@ Reference implementation: `calc_odin/` directory.
 ## Phase 3: AST Node Definition
 
 ### 3.1 Literal nodes
-- [ ] `Node_Int` - integer value (i64)
-- [ ] `Node_Float` - float value (f64)
-- [ ] `Node_Time` - sec, usec, utc_offset
-- [ ] `Node_String` - string value
-- [ ] `Node_Bool` - boolean (true/false)
-- [ ] `Node_Nil` - nil singleton
+- [x] `Node_Int` - integer value (i64)
+- [x] `Node_Float` - float value (f64)
+- [x] `Node_Time` - sec, usec, utc_offset
+- [x] `Node_String` - string value
+- [x] `Node_Bool` - boolean (true/false)
+- [x] `Node_Nil` - nil singleton
 
 ### 3.2 Collection nodes
-- [ ] `Node_Array` - array literal with optional headers (for structs)
-- [ ] `Node_Nodes` - list of statements/expressions
-- [ ] `Node_Args` - function argument names list
-- [ ] `Node_Pair` - key:value pair (for labeled arguments)
-- [ ] `Node_Splat` - splat operator (*expr)
+- [x] `Node_Array` - array literal with optional headers (for structs)
+- [x] `Node_Nodes` - list of statements/expressions
+- [x] `Node_Args` - function argument names list
+- [x] `Node_Pair` - key:value pair (for labeled arguments)
+- [x] `Node_Splat` - splat operator (*expr)
 
 ### 3.3 Expression nodes
-- [ ] `Node_Ident` - identifier reference
-- [ ] `Node_Op` - binary/unary operation (op, lhs, rhs)
-- [ ] `Node_If` - conditional (cond, then, opt_else)
-- [ ] `Node_Lambda` - function/block (args, body, is_block)
-- [ ] `Node_Call` - function call (ident, args)
-- [ ] `Node_Fcall` - indirect call (func_expr, args)
-- [ ] `Node_Genfunc` - generic function reference (&fname)
+- [x] `Node_Ident` - identifier reference
+- [x] `Node_Op` - binary/unary operation (op, lhs, rhs)
+- [x] `Node_If` - conditional (cond, then, opt_else)
+- [x] `Node_Lambda` - function/block (args, body, is_block)
+- [x] `Node_Call` - function call (ident, args)
+- [x] `Node_Fcall` - indirect call (func_expr, args)
+- [x] `Node_Genfunc` - generic function reference (&fname)
 
 ### 3.4 Statement nodes
-- [ ] `Node_Let` - variable binding (lhs, rhs)
-- [ ] `Node_Emit` - emit statement
-- [ ] `Node_Skip` - skip statement
-- [ ] `Node_Return` - return statement
+- [x] `Node_Let` - variable binding (lhs, rhs)
+- [x] `Node_Emit` - emit statement
+- [x] `Node_Skip` - skip statement
+- [x] `Node_Return` - return statement
 
 ### 3.5 Top-level nodes
-- [ ] `Node_Namespace` - namespace/class definition
-- [ ] `Node_Import` - import statement
+- [x] `Node_Namespace` - namespace/class definition
+- [x] `Node_Import` - import statement
 
 ### 3.6 Pattern matching nodes
-- [ ] `Node_PArray` - pattern array
-- [ ] `Node_PStruct` - pattern struct
-- [ ] `Node_PSplat` - pattern with splat (head, mid, tail)
-- [ ] `Node_PLambda` - pattern lambda (pat, cond, body, next)
+- [x] `Node_PArray` - pattern array
+- [x] `Node_PStruct` - pattern struct
+- [x] `Node_PSplat` - pattern with splat (head, mid, tail)
+- [x] `Node_PLambda` - pattern lambda (pat, cond, body, next)
 
 ### 3.7 Node utilities
-- [ ] `node_new()` - generic node creation
-- [ ] `node_free()` - recursive node deallocation
-- [ ] Position info in nodes (fname, lineno)
+- [x] `node_new()` - generic node creation
+- [x] `node_free()` - recursive node deallocation
+- [x] Position info in nodes (fname, lineno)
 
 ---
 
@@ -766,7 +766,7 @@ odin test streem_odin/
 |-------|--------|-------|
 | 1. Setup | **Completed** | Project structure and token definitions |
 | 2. Lexer | **Completed** | Token scanning with TRAIL handling |
-| 3. Nodes | Not Started | AST definition |
+| 3. Nodes | **Completed** | AST node definitions with all types |
 | 4. Parser | Not Started | Push parser |
 | 5. Precedence | Not Started | Operator handling |
 | 6. Parser Test | Not Started | Parser verification |

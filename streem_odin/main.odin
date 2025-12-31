@@ -211,7 +211,7 @@ dump_ast :: proc(node: ^Node, indent: int) {
 
 	print_indent(indent)
 
-	switch node.type {
+	#partial switch node.type {
 	case .Int:
 		data := &node.data.(Node_Int)
 		fmt.printfln("Int(%d)", data.value)
@@ -322,11 +322,11 @@ dump_ast :: proc(node: ^Node, indent: int) {
 	case .Args:
 		data := &node.data.(Node_Args)
 		fmt.print("Args(")
-		for i, name in data.names {
+		for i := 0; i < len(data.names); i += 1 {
 			if i > 0 {
 				fmt.print(", ")
 			}
-			fmt.print(name)
+			fmt.print(data.names[i])
 		}
 		fmt.println(")")
 

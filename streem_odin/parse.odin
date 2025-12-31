@@ -190,7 +190,7 @@ parser_push_token :: proc(p: ^Parser, token: Token) -> Parse_Result {
 		return .Error
 	}
 
-	switch state.kind {
+	#partial switch state.kind {
 	case .Start:
 		parser_set_state(p, .Program)
 		return .Need_Token

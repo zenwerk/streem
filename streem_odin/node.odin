@@ -85,6 +85,8 @@ Node_Data :: union {
 	Node_Return,
 	Node_Ns,
 	Node_Import,
+	Node_PArray,  // pattern array (uses same structure as Node_Nodes)
+	Node_PStruct, // pattern struct (uses same structure as Node_Nodes)
 	Node_PSplat,
 	Node_PLambda,
 }
@@ -137,6 +139,18 @@ Node_Array :: struct {
 // List of nodes (statements/expressions)
 Node_Nodes :: struct {
 	nodes: [dynamic]^Node,
+}
+
+// Pattern array (for pattern matching)
+// Structurally same as Node_Nodes but with different semantics
+Node_PArray :: struct {
+	patterns: [dynamic]^Node,
+}
+
+// Pattern struct (for labeled pattern matching)
+// Contains Node_Pair elements for key:pattern matching
+Node_PStruct :: struct {
+	patterns: [dynamic]^Node,
 }
 
 // Splat expression (*expr)
@@ -466,6 +480,97 @@ node_pair_new :: proc(key: string, value: ^Node, fname: string = "", lineno: int
 }
 
 // ============================================================================
+// Pattern matching helpers
+// ============================================================================
+
+// Create a pattern array node (for [pattern, ...] syntax in case expressions)
+node_parray_new :: proc(fname: string = "", lineno: int = 0) -> ^Node {
+	n := node_new(Node_PArray, .PArray, fname, lineno)
+	return n
+}
+
+// Add a pattern to a pattern array
+node_parray_add :: proc(parray: ^Node, pattern: ^Node) {
+	if parray == nil || parray.type != .PArray {
+		return
+	}
+	p := &parray.data.(Node_PArray)
+	append(&p.patterns, pattern)
+}
+
+// Create a pattern struct node (for {key: pattern, ...} syntax in case expressions)
+node_pstruct_new :: proc(fname: string = "", lineno: int = 0) -> ^Node {
+	n := node_new(Node_PStruct, .PStruct, fname, lineno)
+	return n
+}
+
+// Add a pattern (Node_Pair) to a pattern struct
+node_pstruct_add :: proc(pstruct: ^Node, pattern: ^Node) {
+	if pstruct == nil || pstruct.type != .PStruct {
+		return
+	}
+	p := &pstruct.data.(Node_PStruct)
+	append(&p.patterns, pattern)
+}
+
+// Generic pattern creation (matches C's node_pattern_new behavior)
+// type should be .PArray or .PStruct
+node_pattern_new :: proc(type: Node_Type = .PArray, fname: string = "", lineno: int = 0) -> ^Node {
+	#partial switch type {
+	case .PArray:
+		return node_parray_new(fname, lineno)
+	case .PStruct:
+		return node_pstruct_new(fname, lineno)
+	case:
+		// Default to PArray for backwards compatibility
+		return node_parray_new(fname, lineno)
+	}
+}
+
+// Generic pattern add (works with both PArray and PStruct)
+node_pattern_add :: proc(pattern_node: ^Node, elem: ^Node) {
+	if pattern_node == nil {
+		return
+	}
+	#partial switch pattern_node.type {
+	case .PArray:
+		node_parray_add(pattern_node, elem)
+	case .PStruct:
+		node_pstruct_add(pattern_node, elem)
+	case:
+		// Do nothing for other types
+	}
+}
+
+// Set body for pattern lambda (used when building pattern lambdas)
+node_plambda_body :: proc(n: ^Node, body: ^Node) -> ^Node {
+	if n == nil || n.type != .PLambda {
+		return n
+	}
+	p := &n.data.(Node_PLambda)
+	p.body = body
+	return n
+}
+
+// Add next pattern lambda in chain (for multiple case clauses)
+node_plambda_add :: proc(n: ^Node, next: ^Node) -> ^Node {
+	if n == nil || n.type != .PLambda {
+		return n
+	}
+	// Find the last plambda in the chain
+	current := n
+	for current.type == .PLambda {
+		p := &current.data.(Node_PLambda)
+		if p.next_ == nil {
+			p.next_ = next
+			break
+		}
+		current = p.next_
+	}
+	return n
+}
+
+// ============================================================================
 // Node deallocation
 // ============================================================================
 
@@ -496,6 +601,18 @@ node_free :: proc(n: ^Node) {
 			node_free(node)
 		}
 		delete(d.nodes)
+
+	case Node_PArray:
+		for pat in d.patterns {
+			node_free(pat)
+		}
+		delete(d.patterns)
+
+	case Node_PStruct:
+		for pat in d.patterns {
+			node_free(pat)
+		}
+		delete(d.patterns)
 
 	case Node_Splat:
 		node_free(d.expr)

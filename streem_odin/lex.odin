@@ -1,3 +1,4 @@
+#+feature dynamic-literals
 package streem
 
 import "core:unicode/utf8"
