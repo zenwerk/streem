@@ -287,17 +287,13 @@ strm_value_eq :: proc(a: Strm_Value, b: Strm_Value) -> bool {
 	// Handle array and struct comparison
 	if tag_a == .Array || tag_a == .Struct {
 		if tag_b == .Array || tag_b == .Struct {
-			// TODO: Implement strm_ary_eq when array type is complete
-			return false
+			return strm_ary_eq(Strm_Array(a), Strm_Array(b))
 		}
 	}
 
-	// Handle string comparison (owned and foreign strings need content comparison)
-	if tag_a == .String_O || tag_a == .String_F {
-		if tag_b == .String_O || tag_b == .String_F {
-			// TODO: Implement strm_str_eq when string type is complete
-			return false
-		}
+	// Handle string comparison
+	if strm_string_p(a) && strm_string_p(b) {
+		return strm_str_eq(Strm_String(a), Strm_String(b))
 	}
 
 	// Handle cfunc comparison
@@ -335,8 +331,8 @@ strm_to_str :: proc(v: Strm_Value, allocator := context.allocator) -> string {
 		return fmt.aprintf("<cfunc:%p>", strm_value_cfunc(v))
 
 	case .String_I, .String_6, .String_O, .String_F:
-		// TODO: Extract actual string when string type is complete
-		return "<string>"
+		str := Strm_String(v)
+		return strm_str_to_string(str, allocator)
 
 	case .Array, .Struct:
 		return strm_inspect(v, allocator)
@@ -387,16 +383,101 @@ strm_inspect :: proc(v: Strm_Value, allocator := context.allocator) -> string {
 
 	// For strings, add quotes and escape special characters
 	if strm_string_p(v) {
-		// TODO: Implement proper string escaping when string type is complete
-		return "\"<string>\""
+		str := Strm_String(v)
+		s := strm_str_to_string(str, allocator)
+		return fmt.aprintf("\"%s\"", str_escape(s, allocator))
 	}
 
 	// For arrays/structs, format with brackets
 	if tag == .Array || tag == .Struct {
-		// TODO: Implement proper array inspection when array type is complete
-		return "[...]"
+		ary := Strm_Array(v)
+		return ary_inspect(ary, allocator)
 	}
 
 	// For other types, use normal string conversion
 	return strm_to_str(v, allocator)
+}
+
+// Escape special characters in string for inspect
+@(private)
+str_escape :: proc(s: string, allocator := context.allocator) -> string {
+	context.allocator = allocator
+	builder := strings.builder_make(allocator)
+
+	for c in s {
+		switch c {
+		case '\n':
+			strings.write_string(&builder, "\\n")
+		case '\r':
+			strings.write_string(&builder, "\\r")
+		case '\t':
+			strings.write_string(&builder, "\\t")
+		case '"':
+			strings.write_string(&builder, "\\\"")
+		case '\\':
+			strings.write_string(&builder, "\\\\")
+		case '\x00':
+			strings.write_string(&builder, "\\0")
+		case:
+			if c >= 0x20 && c < 0x7F {
+				strings.write_rune(&builder, c)
+			} else {
+				fmt.sbprintf(&builder, "\\x%02x", u32(c))
+			}
+		}
+	}
+
+	return strings.to_string(builder)
+}
+
+// Format array for inspect
+@(private)
+ary_inspect :: proc(ary: Strm_Array, allocator := context.allocator) -> string {
+	context.allocator = allocator
+
+	if u64(ary) == 0 {
+		return "[]"
+	}
+
+	builder := strings.builder_make(allocator)
+	strings.write_string(&builder, "[")
+
+	// Check for namespace
+	ns := strm_ary_ns(ary)
+	if ns != nil && ns.name != "" {
+		strings.write_string(&builder, "@")
+		strings.write_string(&builder, ns.name)
+		if strm_ary_len(ary) > 0 {
+			strings.write_string(&builder, " ")
+		}
+	}
+
+	length := strm_ary_len(ary)
+	ptr := strm_ary_ptr(ary)
+	headers := strm_ary_headers(ary)
+	headers_ptr := strm_ary_ptr(headers) if u64(headers) != 0 else nil
+
+	for i in 0 ..< length {
+		if i > 0 {
+			strings.write_string(&builder, ", ")
+		}
+
+		// Check for header (field name)
+		if headers_ptr != nil && i < strm_ary_len(headers) {
+			header_val := headers_ptr[i]
+			if strm_string_p(header_val) {
+				header_str := Strm_String(header_val)
+				h := strm_str_to_string(header_str, allocator)
+				strings.write_string(&builder, h)
+				strings.write_string(&builder, ":")
+			}
+		}
+
+		// Write element value
+		elem_str := strm_inspect(ptr[i], allocator)
+		strings.write_string(&builder, elem_str)
+	}
+
+	strings.write_string(&builder, "]")
+	return strings.to_string(builder)
 }

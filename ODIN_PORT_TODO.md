@@ -359,14 +359,14 @@ strm_string is a u64 with various tag types:
 - STRING_F: foreign/static (no ownership)
 ```
 
-- [ ] `Strm_String` type
-- [ ] `strm_str_new(ptr, len)` - create owned string
-- [ ] `strm_str_static(ptr, len)` - create static string reference
-- [ ] `strm_str_intern(ptr, len)` - create/get interned string
-- [ ] `strm_str_ptr()` - get string pointer
-- [ ] `strm_str_len()` - get string length
-- [ ] `strm_str_eq()` - compare strings
-- [ ] `strm_str_cstr()` - get null-terminated C string
+- [x] `Strm_String` type
+- [x] `strm_str_new(ptr, len)` - create owned string
+- [x] `strm_str_static(ptr, len)` - create static string reference
+- [x] `strm_str_intern(ptr, len)` - create/get interned string
+- [x] `strm_str_ptr()` - get string pointer
+- [x] `strm_str_len()` - get string length
+- [x] `strm_str_eq()` - compare strings
+- [x] `strm_str_cstr()` - get null-terminated C string
 
 ### 9.2 Array representation
 ```
@@ -378,13 +378,13 @@ struct strm_array {
 }
 ```
 
-- [ ] `Strm_Array` type (tagged pointer to struct)
-- [ ] `strm_ary_new(ptr, len)` - create array
-- [ ] `strm_ary_ptr()` - get element pointer
-- [ ] `strm_ary_len()` - get length
-- [ ] `strm_ary_headers()` - get headers array
-- [ ] `strm_ary_ns()` - get namespace
-- [ ] `strm_ary_eq()` - compare arrays
+- [x] `Strm_Array` type (tagged pointer to struct)
+- [x] `strm_ary_new(ptr, len)` - create array
+- [x] `strm_ary_ptr()` - get element pointer
+- [x] `strm_ary_len()` - get length
+- [x] `strm_ary_headers()` - get headers array
+- [x] `strm_ary_ns()` - get namespace
+- [x] `strm_ary_eq()` - compare arrays
 
 ---
 
@@ -770,7 +770,7 @@ odin test streem_odin/
 | 6. Parser Test | **Completed** | 71 tests passing |
 | 7. Main (Parse) | **Completed** | CLI for parsing (file, -e, -c, -v) |
 | 8. Values | **Completed** | NaN-boxing with 76 tests passing |
-| 9. Str/Array | Not Started | String/Array types |
+| 9. Str/Array | **Completed** | String/Array types with 99 tests passing |
 | 10. Namespace | Not Started | Scope management |
 | 11. Evaluator | Not Started | AST execution |
 | 12. Runtime | Not Started | Stream/threading |
