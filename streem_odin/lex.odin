@@ -150,7 +150,7 @@ lex_scan_identifier :: proc(lex: ^Lex, start_offset: int) -> Token {
 	return lex_create_token(lex, .Ident, lexeme)
 }
 
-// Scan number literal (int or float, decimal/hex/octal)
+// Scan number literal (int or float, decimal/hex/octal) or time literal
 lex_scan_number :: proc(lex: ^Lex, start_offset: int) -> Token {
 	// Check for hex (0x) or octal (0o)
 	if lex.input[start_offset] == '0' && lex.offset - start_offset == 1 {
@@ -174,6 +174,42 @@ lex_scan_number :: proc(lex: ^Lex, start_offset: int) -> Token {
 	// Scan integer part
 	for is_digit(lex_peek(lex)) {
 		lex_advance(lex)
+	}
+
+	// Check for time literal pattern: YYYY.MM.DD...
+	// Time literals have 4 digits followed by '.' and more digits (not float pattern)
+	digits_count := lex.offset - start_offset
+	if digits_count == 4 && lex_peek(lex) == '.' && is_digit(lex_peek_n(lex, 1)) {
+		// Could be time literal - check if it matches date pattern
+		// Save position to potentially rollback
+		saved_offset := lex.offset
+		saved_pos := lex.pos
+
+		lex_advance(lex) // consume '.'
+
+		// Scan month (1-2 digits)
+		month_start := lex.offset
+		for is_digit(lex_peek(lex)) {
+			lex_advance(lex)
+		}
+		month_digits := lex.offset - month_start
+
+		// Check for another '.' (day part)
+		if month_digits >= 1 && month_digits <= 2 && lex_peek(lex) == '.' && is_digit(lex_peek_n(lex, 1)) {
+			lex_advance(lex) // consume '.'
+
+			// Scan day (1-2 digits)
+			for is_digit(lex_peek(lex)) {
+				lex_advance(lex)
+			}
+
+			// This is a time literal - scan rest of time pattern
+			return lex_scan_time(lex, start_offset)
+		}
+
+		// Not a time literal, rollback and treat as float
+		lex.offset = saved_offset
+		lex.pos = saved_pos
 	}
 
 	// Check for decimal point (but not '..' range or method call)
@@ -244,43 +280,58 @@ lex_scan_symbol :: proc(lex: ^Lex, start_offset: int) -> Token {
 }
 
 // Scan time literal (YYYY.MM.DD or YYYY.MM.DDThh:mm:ss with optional timezone)
+// Called after date part (YYYY.MM.DD) has already been scanned
 lex_scan_time :: proc(lex: ^Lex, start_offset: int) -> Token {
-	// Already scanned some digits
-	// Expect format: YYYY.MM.DD or YYYY.MM.DDThh:mm:ss[.fraction][timezone]
-
-	// Continue scanning date part
-	for {
-		r := lex_peek(lex)
-		if is_digit(r) || r == '.' {
-			lex_advance(lex)
-		} else {
-			break
-		}
-	}
+	// Date part (YYYY.MM.DD) already scanned by lex_scan_number
+	// Now check for optional time part (Thh:mm:ss[.fraction][timezone])
 
 	// Check for time part (T followed by time)
 	if lex_peek(lex) == 'T' {
 		lex_advance(lex) // consume 'T'
-		for {
-			r := lex_peek(lex)
-			if is_digit(r) || r == ':' || r == '.' {
+
+		// Scan hours
+		for is_digit(lex_peek(lex)) {
+			lex_advance(lex)
+		}
+
+		// Scan :mm
+		if lex_peek(lex) == ':' {
+			lex_advance(lex)
+			for is_digit(lex_peek(lex)) {
 				lex_advance(lex)
-			} else {
-				break
 			}
 		}
+
+		// Scan optional :ss
+		if lex_peek(lex) == ':' {
+			lex_advance(lex)
+			for is_digit(lex_peek(lex)) {
+				lex_advance(lex)
+			}
+		}
+
+		// Scan optional .fraction
+		if lex_peek(lex) == '.' {
+			lex_advance(lex)
+			for is_digit(lex_peek(lex)) {
+				lex_advance(lex)
+			}
+		}
+
 		// Check for timezone
 		r := lex_peek(lex)
 		if r == 'Z' {
 			lex_advance(lex)
 		} else if r == '+' || r == '-' {
 			lex_advance(lex)
-			for {
-				r = lex_peek(lex)
-				if is_digit(r) || r == ':' {
+			// Scan timezone offset hh or hh:mm
+			for is_digit(lex_peek(lex)) {
+				lex_advance(lex)
+			}
+			if lex_peek(lex) == ':' {
+				lex_advance(lex)
+				for is_digit(lex_peek(lex)) {
 					lex_advance(lex)
-				} else {
-					break
 				}
 			}
 		}

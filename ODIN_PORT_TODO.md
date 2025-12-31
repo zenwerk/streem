@@ -57,30 +57,30 @@ Reference implementation: `calc_odin/` directory.
 ## Phase 2: Lexer Implementation
 
 ### 2.1 Core lexer structure
-- [ ] `Lex` struct with position tracking (offset, line, column)
-- [ ] `lex_init()` - Initialize lexer with input string
-- [ ] `lex_peek()` - Peek next character without consuming
-- [ ] `lex_advance()` - Consume and return next character
-- [ ] `lex_create_token()` - Create token with position info
+- [x] `Lex` struct with position tracking (offset, line, column)
+- [x] `lex_init()` - Initialize lexer with input string
+- [x] `lex_peek()` - Peek next character without consuming
+- [x] `lex_advance()` - Consume and return next character
+- [x] `lex_create_token()` - Create token with position info
 
 ### 2.2 Token scanning
-- [ ] `lex_scan_token()` - Main scanning dispatch
-- [ ] Whitespace handling (space, tab, but NOT newline - it's significant)
-- [ ] Comment handling (`#` to end of line -> treat as newline)
-- [ ] Keyword recognition (after identifier scan)
-- [ ] Operator scanning (handle multi-char ops like `==`, `->`, etc.)
-- [ ] Special lambda tokens: `)-> ` and `)->{` (includes trailing chars)
+- [x] `lex_scan_token()` - Main scanning dispatch
+- [x] Whitespace handling (space, tab, but NOT newline - it's significant)
+- [x] Comment handling (`#` to end of line -> treat as newline)
+- [x] Keyword recognition (after identifier scan)
+- [x] Operator scanning (handle multi-char ops like `==`, `->`, etc.)
+- [x] Special lambda tokens: `)-> ` and `)->{` (includes trailing chars)
 
 ### 2.3 Literal scanning
-- [ ] `lex_scan_number()` - integers, floats, hex, octal
-- [ ] `lex_scan_string()` - double-quoted with escape sequences
-- [ ] `lex_scan_identifier()` - unicode-aware identifiers
-- [ ] `lex_scan_symbol()` - `:identifier`
-- [ ] `lex_scan_time()` - date/time literals
+- [x] `lex_scan_number()` - integers, floats, hex, octal
+- [x] `lex_scan_string()` - double-quoted with escape sequences
+- [x] `lex_scan_identifier()` - unicode-aware identifiers
+- [x] `lex_scan_symbol()` - `:identifier`
+- [x] `lex_scan_time()` - date/time literals
 
 ### 2.4 TRAIL handling
-- [ ] Implement optional trailing whitespace/comment/newline after operators
-- [ ] This allows operators to span lines in certain contexts
+- [x] Implement optional trailing whitespace/comment/newline after operators
+- [x] This allows operators to span lines in certain contexts
 
 ---
 
@@ -731,6 +731,33 @@ May need lookahead or special token variants.
 - Be careful with NaN propagation
 - Test thoroughly on target architecture
 
+### Test File Naming Convention
+Test files should be separated by module and follow the naming pattern `{module}_test.odin`:
+
+| Source File | Test File |
+|------------|-----------|
+| `lex.odin` | `lex_test.odin` |
+| `token.odin` | `token_test.odin` |
+| `node.odin` | `node_test.odin` |
+| `value.odin` | `value_test.odin` |
+| `state.odin` | `state_test.odin` |
+| `queue.odin` | `queue_test.odin` |
+| `stream.odin` | `stream_test.odin` |
+| `exec.odin` | `exec_test.odin` |
+| `parse.odin` | `parse_test.odin` |
+
+Rules:
+1. Each test file contains only tests for its corresponding module
+2. Test files use the same `package streem` declaration
+3. Test procedures are annotated with `@(test)`
+4. Test procedure names follow the pattern `test_{module}_{what}` (e.g., `test_lex_keywords`)
+5. Use `core:testing` package for assertions
+
+Run tests with:
+```shell
+odin test streem_odin/
+```
+
 ---
 
 ## Progress Tracking
@@ -738,7 +765,7 @@ May need lookahead or special token variants.
 | Phase | Status | Notes |
 |-------|--------|-------|
 | 1. Setup | **Completed** | Project structure and token definitions |
-| 2. Lexer | Not Started | Token scanning |
+| 2. Lexer | **Completed** | Token scanning with TRAIL handling |
 | 3. Nodes | Not Started | AST definition |
 | 4. Parser | Not Started | Push parser |
 | 5. Precedence | Not Started | Operator handling |
