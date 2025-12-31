@@ -400,22 +400,22 @@ strm_state represents a scope/namespace:
 - flags: namespace properties (e.g., STRM_NS_UDEF for user-defined)
 ```
 
-- [ ] `Strm_State` struct
-- [ ] Hash table for environment (khash or custom)
+- [x] `Strm_State` struct
+- [x] Hash table for environment (using Odin map with Strm_String keys)
 
 ### 10.2 Variable operations
-- [ ] `strm_var_def(state, name, value)` - define new variable
-- [ ] `strm_var_set(state, name, value)` - set variable (create if not exists)
-- [ ] `strm_var_get(state, name, *value)` - get variable value
-- [ ] `strm_var_match(state, name, value)` - pattern match assignment
-- [ ] `strm_env_copy(dst, src)` - copy environment (for import)
+- [x] `strm_var_def(state, name, value)` - define new variable
+- [x] `strm_var_set(state, name, value)` - set variable (create if not exists)
+- [x] `strm_var_get(state, name, *value)` - get variable value
+- [x] `strm_var_match(state, name, value)` - pattern match assignment
+- [x] `strm_env_copy(dst, src)` - copy environment (for import)
 
 ### 10.3 Namespace operations
-- [ ] `strm_ns_new(parent, name)` - create named namespace
-- [ ] `strm_ns_create(parent, name)` - create and register namespace
-- [ ] `strm_ns_get(name)` - look up namespace by name
-- [ ] `strm_value_ns(value)` - get namespace of a value
-- [ ] Global namespaces: `strm_ns_array`, `strm_ns_string`, `strm_ns_number`
+- [x] `strm_ns_new(parent, name)` - create named namespace
+- [x] `strm_ns_create(parent, name)` - create and register namespace
+- [x] `strm_ns_get(name)` - look up namespace by name
+- [x] `strm_value_ns(value)` - get namespace of a value
+- [x] Global namespaces: `strm_ns_array`, `strm_ns_string`, `strm_ns_number`
 
 ---
 
@@ -771,7 +771,7 @@ odin test streem_odin/
 | 7. Main (Parse) | **Completed** | CLI for parsing (file, -e, -c, -v) |
 | 8. Values | **Completed** | NaN-boxing with 76 tests passing |
 | 9. Str/Array | **Completed** | String/Array types with 99 tests passing |
-| 10. Namespace | Not Started | Scope management |
+| 10. Namespace | **Completed** | State/namespace management with 109 tests passing |
 | 11. Evaluator | Not Started | AST execution |
 | 12. Runtime | Not Started | Stream/threading |
 | 13. I/O | Not Started | File/network IO |

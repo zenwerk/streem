@@ -441,7 +441,7 @@ exec_ns :: proc(strm: ^Strm_Stream, state: ^Strm_State, node: ^Node, ret: ^Strm_
 	data := &node.data.(Node_Ns)
 
 	// Create namespace
-	ns := strm_ns_create(state, data.name)
+	ns := strm_ns_create(state, strm_str_intern(data.name))
 
 	// Evaluate body in namespace scope
 	result := exec_expr(strm, ns, data.body, ret)
@@ -457,7 +457,7 @@ exec_import :: proc(state: ^Strm_State, node: ^Node, ret: ^Strm_Value) -> Exec_R
 	data := &node.data.(Node_Import)
 
 	// Look up namespace
-	ns := strm_ns_get(data.name)
+	ns := strm_ns_get(strm_str_intern(data.name))
 	if ns == nil {
 		ret^ = strm_nil_value()
 		return .Error

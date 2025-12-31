@@ -444,9 +444,10 @@ ary_inspect :: proc(ary: Strm_Array, allocator := context.allocator) -> string {
 
 	// Check for namespace
 	ns := strm_ary_ns(ary)
-	if ns != nil && ns.name != "" {
+	if ns != nil && u64(ns.name) != 0 {
 		strings.write_string(&builder, "@")
-		strings.write_string(&builder, ns.name)
+		ns_name := ns.name
+		strings.write_string(&builder, strm_str_ptr(&ns_name))
 		if strm_ary_len(ary) > 0 {
 			strings.write_string(&builder, " ")
 		}
