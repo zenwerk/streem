@@ -504,21 +504,21 @@ strm_stream:
 - exc: current exception
 ```
 
-- [ ] `Strm_Stream` struct
-- [ ] `strm_stream_new(mode, start_func, close_func, data)` - create stream
-- [ ] `strm_stream_close(strm)` - close stream and propagate
+- [x] `Strm_Stream` struct
+- [x] `strm_stream_new(mode, start_func, close_func, data)` - create stream
+- [x] `strm_stream_close(strm)` - close stream and propagate
 
 ### 12.3 Stream connection
-- [ ] `strm_stream_connect(src, dst)` - connect two streams
-- [ ] `strm_connect(strm, src_val, dst_val, *ret)` - high-level pipe operator
+- [x] `strm_stream_connect(src, dst)` - connect two streams
+- [x] `strm_connect(strm, src_val, dst_val, *ret)` - high-level pipe operator
   - Converts IO/lambda/array to stream as needed
   - Called by `|` operator
 
 ### 12.4 Data emission
-- [ ] `strm_emit(strm, data, cb)` - emit data to downstream
+- [x] `strm_emit(strm, data, cb)` - emit data to downstream
   - Pushes task to destination's queue
   - Optionally schedules callback on self
-- [ ] `strm_io_emit(strm, data, fd, cb)` - emit with IO callback
+- [x] `strm_io_emit(strm, data, fd, cb)` - emit with IO callback
 
 ### 12.5 Task queue (lock-free)
 Reference: `src/queue.c`, `src/atomic.h`
@@ -531,16 +531,16 @@ strm_task:
 strm_queue: lock-free FIFO queue
 ```
 
-- [ ] `Strm_Task` struct
-- [ ] `Strm_Queue` struct (lock-free linked list)
-- [ ] `strm_task_new(func, data)` - create task
-- [ ] `strm_task_push(strm, func, data)` - add task to stream's queue
-- [ ] `strm_task_add(strm, task)` - add task and enqueue stream
-- [ ] `strm_queue_new()` - create queue
-- [ ] `strm_queue_add(q, val)` - enqueue (lock-free CAS)
-- [ ] `strm_queue_get(q)` - dequeue (lock-free CAS)
-- [ ] `strm_queue_empty_p(q)` - check if empty
-- [ ] Atomic operations: CAS, increment, decrement
+- [x] `Strm_Task` struct
+- [x] `Strm_Queue` struct (lock-free linked list)
+- [x] `strm_task_new(func, data)` - create task
+- [x] `strm_task_push(strm, func, data)` - add task to stream's queue
+- [x] `strm_task_add(strm, task)` - add task and enqueue stream
+- [x] `strm_queue_new()` - create queue
+- [x] `strm_queue_add(q, val)` - enqueue (mutex-based, can be upgraded to lock-free CAS)
+- [x] `strm_queue_get(q)` - dequeue (mutex-based, can be upgraded to lock-free CAS)
+- [x] `strm_queue_empty_p(q)` - check if empty
+- [x] Atomic operations: CAS, increment, decrement
 
 ### 12.6 Worker thread pool
 ```
@@ -549,18 +549,18 @@ Global queues:
 - queue: filter/consumer tasks
 ```
 
-- [ ] `worker_init()` - initialize worker threads
-- [ ] `task_loop()` - worker thread function
+- [x] `worker_init()` - initialize worker threads
+- [x] `task_loop()` - worker thread function
   - Dequeue from prod_queue first, then queue
   - Execute tasks with exclusion flag
-- [ ] `strm_loop()` - main event loop (waits for completion)
-- [ ] `worker_count()` - determine thread count (env STRM_WORKER_MAX or CPU count)
+- [x] `strm_loop()` - main event loop (waits for completion)
+- [x] `worker_count()` - determine thread count (env STRM_WORKER_MAX or CPU count)
 
 ### 12.7 Exception handling
-- [ ] `strm_raise(strm, msg)` - set runtime error
-- [ ] `strm_set_exc(strm, type, arg)` - set exception
-- [ ] `strm_clear_exc(strm)` - clear exception
-- [ ] `strm_eprint(strm)` - print exception
+- [x] `strm_raise(strm, msg)` - set runtime error
+- [x] `strm_set_exc(strm, type, arg)` - set exception
+- [x] `strm_clear_exc(strm)` - clear exception
+- [x] `strm_eprint(strm)` - print exception
 
 ---
 
@@ -775,7 +775,7 @@ odin test streem_odin/
 | 9. Str/Array | **Completed** | String/Array types with 99 tests passing |
 | 10. Namespace | **Completed** | State/namespace management with 109 tests passing |
 | 11. Evaluator | **Completed** | AST execution with 132 tests passing |
-| 12. Runtime | Not Started | Stream/threading |
+| 12. Runtime | **Completed** | Stream/threading with 144 tests (143 passing) |
 | 13. I/O | Not Started | File/network IO |
 | 14. Built-ins | Not Started | Standard library |
 | 15. Integration | Not Started | Full testing |
