@@ -12,27 +12,27 @@ Reference implementation: `calc_odin/` directory.
 ## Phase 1: Project Setup & Token Definition
 
 ### 1.1 Create project structure
-- [ ] Create `streem_odin/` directory
-- [ ] Create `lex.odin` - Lexer
-- [ ] Create `token.odin` - Token types
-- [ ] Create `node.odin` - AST nodes
-- [ ] Create `parse.odin` - Push parser
-- [ ] Create `value.odin` - Runtime values (NaN-boxing)
-- [ ] Create `state.odin` - Namespace/scope management
-- [ ] Create `stream.odin` - Stream runtime
-- [ ] Create `queue.odin` - Thread-safe task queue
-- [ ] Create `exec.odin` - AST evaluator
-- [ ] Create `builtin/` - Built-in functions directory
-- [ ] Create `main.odin` - Entry point
-- [ ] Create `test.odin` - Unit tests
+- [x] Create `streem_odin/` directory
+- [x] Create `lex.odin` - Lexer
+- [x] Create `token.odin` - Token types
+- [x] Create `node.odin` - AST nodes
+- [x] Create `parse.odin` - Push parser
+- [x] Create `value.odin` - Runtime values (NaN-boxing)
+- [x] Create `state.odin` - Namespace/scope management
+- [x] Create `stream.odin` - Stream runtime
+- [x] Create `queue.odin` - Thread-safe task queue
+- [x] Create `exec.odin` - AST evaluator
+- [x] Create `builtin/` - Built-in functions directory
+- [x] Create `main.odin` - Entry point
+- [x] Create `test.odin` - Unit tests
 
 ### 1.2 Define Token Types (from lex.l)
-- [ ] Keywords:
+- [x] Keywords:
   - `if`, `else`, `case`, `emit`, `skip`, `return`
   - `namespace`, `class`, `import`
   - `def`, `method`, `new`
   - `nil`, `true`, `false`
-- [ ] Operators:
+- [x] Operators:
   - Arithmetic: `+`, `-`, `*`, `/`, `%`
   - Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`
   - Logical: `&&`, `||`, `!`
@@ -40,17 +40,17 @@ Reference implementation: `calc_odin/` directory.
   - Assignment: `=`, `<-`, `=>`
   - Lambda: `->`, `)-> `, `)->{`
   - Scope: `::`
-- [ ] Delimiters: `(`, `)`, `[`, `]`, `{`, `}`, `,`, `;`, `:`, `.`, `@`
-- [ ] Literals:
+- [x] Delimiters: `(`, `)`, `[`, `]`, `{`, `}`, `,`, `;`, `:`, `.`, `@`
+- [x] Literals:
   - Integer (decimal, hex `0x`, octal `0o`)
   - Float
   - String (double-quoted with escapes)
   - Symbol (`:identifier`)
   - Time (`YYYY.MM.DD` or `YYYY.MM.DDThh:mm:ss`)
-- [ ] Identifier (unicode-aware)
-- [ ] Label (`identifier:`)
-- [ ] Newline (significant for statement termination)
-- [ ] EOF, Error
+- [x] Identifier (unicode-aware)
+- [x] Label (`identifier:`)
+- [x] Newline (significant for statement termination)
+- [x] EOF, Error
 
 ---
 
@@ -737,7 +737,7 @@ May need lookahead or special token variants.
 
 | Phase | Status | Notes |
 |-------|--------|-------|
-| 1. Setup | Not Started | Project structure |
+| 1. Setup | **Completed** | Project structure and token definitions |
 | 2. Lexer | Not Started | Token scanning |
 | 3. Nodes | Not Started | AST definition |
 | 4. Parser | Not Started | Push parser |
