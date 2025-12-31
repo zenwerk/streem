@@ -134,7 +134,7 @@ run_source :: proc(source: string, filename: string, verbose: bool) {
 	lex_init(&lex, source, filename)
 
 	// Parse
-	ast, ok := parse_program(&lex)
+	ast, ok := parse_program_from_lex(&lex)
 	if !ok {
 		fmt.eprintln("Error: Parse failed")
 		os.exit(1)
@@ -191,7 +191,7 @@ syntax_check :: proc(source: string, filename: string) {
 	lex: Lex
 	lex_init(&lex, source, filename)
 
-	ast, ok := parse_program(&lex)
+	ast, ok := parse_program_from_lex(&lex)
 	if !ok {
 		fmt.eprintfln("Syntax error in %s", filename)
 		os.exit(1)
