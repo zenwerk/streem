@@ -424,50 +424,52 @@ strm_state represents a scope/namespace:
 Reference: `src/exec.c`
 
 ### 11.1 Core evaluation
-- [ ] `exec_expr(strm, state, node, *ret)` - main evaluation dispatch
-- [ ] Error handling with `node_error` struct
-- [ ] Error types: RUNTIME, RETURN, SKIP
+- [x] `exec_expr(strm, state, node, *ret)` - main evaluation dispatch
+- [x] Exec_Result enum: Ok, Error, Return, Skip
+- [x] Strm_Lambda struct for closures
+- [x] Strm_Genfunc struct for generic function references
 
 ### 11.2 Literal evaluation
-- [ ] NODE_INT -> `strm_int_value`
-- [ ] NODE_FLOAT -> `strm_float_value`
-- [ ] NODE_BOOL -> `strm_bool_value`
-- [ ] NODE_NIL -> `strm_nil_value`
-- [ ] NODE_STR -> `strm_str_value`
-- [ ] NODE_TIME -> `strm_time_new`
+- [x] NODE_INT -> `strm_int_value`
+- [x] NODE_FLOAT -> `strm_float_value`
+- [x] NODE_BOOL -> `strm_bool_value`
+- [x] NODE_NIL -> `strm_nil_value`
+- [x] NODE_STR -> `strm_str_value`
+- [x] NODE_TIME -> `strm_time_new` (basic implementation)
 
 ### 11.3 Expression evaluation
-- [ ] NODE_IDENT - variable lookup
-- [ ] NODE_OP - operator dispatch (calls registered functions)
-- [ ] NODE_IF - conditional evaluation
-- [ ] NODE_ARRAY - array construction with splat support
+- [x] NODE_IDENT - variable lookup
+- [x] NODE_OP - operator dispatch (calls registered functions via exec_call_internal)
+- [x] NODE_IF - conditional evaluation
+- [x] NODE_ARRAY - array construction with splat support
 
 ### 11.4 Statement evaluation
-- [ ] NODE_LET - variable assignment
-- [ ] NODE_EMIT - emit to downstream
-- [ ] NODE_SKIP - skip current value (set exception)
-- [ ] NODE_RETURN - return value (set exception)
-- [ ] NODE_NODES - sequential evaluation
+- [x] NODE_LET - variable assignment
+- [x] NODE_EMIT - emit to downstream (via strm_emit)
+- [x] NODE_SKIP - skip current value (set exception)
+- [x] NODE_RETURN - return value (set exception)
+- [x] NODE_NODES - sequential evaluation
 
 ### 11.5 Function handling
-- [ ] NODE_LAMBDA / NODE_PLAMBDA - create lambda closure
-- [ ] NODE_CALL - named function call
-- [ ] NODE_FCALL - indirect function call
-- [ ] NODE_GENFUNC - generic function reference
-- [ ] `strm_funcall()` - dispatch function call by type
-- [ ] `lambda_call()` - evaluate lambda body with arguments
+- [x] NODE_LAMBDA / NODE_PLAMBDA - create lambda closure
+- [x] NODE_CALL - named function call
+- [x] NODE_FCALL - indirect function call
+- [x] NODE_GENFUNC - generic function reference
+- [x] `strm_funcall()` - dispatch function call by type (cfunc, lambda, genfunc, array)
+- [x] `lambda_call()` - evaluate lambda body with arguments
+- [x] `plambda_call()` - pattern lambda with matching
 
 ### 11.6 Pattern matching
-- [ ] `pmatch(strm, state, pat, val)` - match value against pattern
-- [ ] `pattern_match(strm, state, npat, argc, argv)` - match array of args
-- [ ] NODE_PARRAY - array pattern
-- [ ] NODE_PSTRUCT - struct pattern (labeled fields)
-- [ ] NODE_PSPLAT - splat pattern (head, *mid, tail)
-- [ ] Placeholder `_` handling
+- [x] `pmatch(strm, state, pat, val)` - match value against pattern
+- [x] `pattern_match(strm, state, npat, argc, argv)` - match array of args
+- [x] NODE_PARRAY - array pattern
+- [x] NODE_PSTRUCT - struct pattern (labeled fields)
+- [x] NODE_PSPLAT - splat pattern (head, *mid, tail)
+- [x] Placeholder `_` handling via `pattern_placeholder_p()`
 
 ### 11.7 Namespace/Import
-- [ ] NODE_NS - create and enter namespace
-- [ ] NODE_IMPORT - copy bindings from namespace
+- [x] NODE_NS - create and enter namespace
+- [x] NODE_IMPORT - copy bindings from namespace
 
 ---
 
@@ -772,7 +774,7 @@ odin test streem_odin/
 | 8. Values | **Completed** | NaN-boxing with 76 tests passing |
 | 9. Str/Array | **Completed** | String/Array types with 99 tests passing |
 | 10. Namespace | **Completed** | State/namespace management with 109 tests passing |
-| 11. Evaluator | Not Started | AST execution |
+| 11. Evaluator | **Completed** | AST execution with 132 tests passing |
 | 12. Runtime | Not Started | Stream/threading |
 | 13. I/O | Not Started | File/network IO |
 | 14. Built-ins | Not Started | Standard library |

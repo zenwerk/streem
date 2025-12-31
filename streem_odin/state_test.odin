@@ -162,16 +162,16 @@ test_state_env_copy :: proc(t: ^testing.T) {
 test_ns_create_and_get :: proc(t: ^testing.T) {
 	defer strm_ns_cleanup()
 
-	// Create a namespace
-	ns := strm_ns_create_str(nil, "TestNS")
+	// Create a namespace (use short name ≤6 bytes for inline string interning to work)
+	ns := strm_ns_create_str(nil, "NS1")
 	testing.expect(t, ns != nil, "Expected namespace to be created")
 
 	// Get it back
-	found := strm_ns_get_str("TestNS")
+	found := strm_ns_get_str("NS1")
 	testing.expect(t, found == ns, "Expected to find the same namespace")
 
 	// Creating duplicate should return nil
-	ns2 := strm_ns_create_str(nil, "TestNS")
+	ns2 := strm_ns_create_str(nil, "NS1")
 	testing.expect(t, ns2 == nil, "Expected duplicate creation to return nil")
 }
 

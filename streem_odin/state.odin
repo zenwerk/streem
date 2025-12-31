@@ -307,21 +307,33 @@ strm_ns_number: ^Strm_State = nil
 strm_ns_init :: proc() {
 	ensure_registry_init()
 
-	// Create Array namespace
-	strm_ns_array = strm_ns_create(nil, strm_str_intern("Array"))
+	// Create Array namespace (or get existing)
+	array_name := strm_str_intern("Array")
+	strm_ns_array = strm_ns_get(array_name)
+	if strm_ns_array == nil {
+		strm_ns_array = strm_ns_create(nil, array_name)
+	}
 	if strm_ns_array != nil {
 		// Clear Udef flag - primitive namespaces cannot create instances directly
 		strm_ns_array.flags = {}
 	}
 
-	// Create String namespace
-	strm_ns_string = strm_ns_create(nil, strm_str_intern("String"))
+	// Create String namespace (or get existing)
+	string_name := strm_str_intern("String")
+	strm_ns_string = strm_ns_get(string_name)
+	if strm_ns_string == nil {
+		strm_ns_string = strm_ns_create(nil, string_name)
+	}
 	if strm_ns_string != nil {
 		strm_ns_string.flags = {}
 	}
 
-	// Create Number namespace
-	strm_ns_number = strm_ns_create(nil, strm_str_intern("Number"))
+	// Create Number namespace (or get existing)
+	number_name := strm_str_intern("Number")
+	strm_ns_number = strm_ns_get(number_name)
+	if strm_ns_number == nil {
+		strm_ns_number = strm_ns_create(nil, number_name)
+	}
 	if strm_ns_number != nil {
 		strm_ns_number.flags = {}
 	}
