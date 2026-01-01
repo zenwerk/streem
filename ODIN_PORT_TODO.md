@@ -667,9 +667,16 @@ Windowing:
 - [x] `replace(str, old, new)` - replace all occurrences
 
 ### 14.7 Math functions (math.c)
-- [ ] `sin`, `cos`, `tan`, etc. (deferred)
-- [ ] `sqrt`, `pow`, `log`, etc. (deferred)
-- [ ] `abs`, `floor`, `ceil`, `round` (deferred)
+- [x] `sin`, `cos`, `tan` - trigonometric functions
+- [x] `sinh`, `cosh`, `tanh` - hyperbolic functions
+- [x] `asin`, `acos`, `atan` - inverse trigonometric functions
+- [x] `asinh`, `acosh`, `atanh` - inverse hyperbolic functions
+- [x] `sqrt`, `cbrt`, `pow` - power/root functions
+- [x] `log`, `log10`, `log2`, `exp` - logarithmic/exponential functions
+- [x] `fabs`, `floor`, `ceil`, `round`, `trunc` - rounding functions
+- [x] `hypot`, `gcd`, `erfc`, `frexp`, `ldexp` - other math functions
+- [x] `PI`, `E` - math constants
+- [x] `int` - alias for trunc
 
 ### 14.8 Other built-ins
 - [ ] `random` - random number generation (deferred)
@@ -791,8 +798,8 @@ odin test streem_odin/
 | 11. Evaluator | **Completed** | AST execution with 132 tests passing |
 | 12. Runtime | **Completed** | Stream/threading with 144 tests (143 passing) |
 | 13. I/O | **Completed** | IO streams, read/write callbacks, file operations |
-| 14. Built-ins | **Completed** | Core: puts, ==, !=, \|, fread, fwrite; Number: +,-,*,/,%,<,<=,>,>=,&&,\|\|,!,&,~; Iter: seq, repeat, map, filter, each, count, reduce, min, max, take, drop; Array: length, each, map, flatmap |
-| 15. Integration | **Completed** | 153 tests (152 passing), examples working |
+| 14. Built-ins | **Completed** | Core: puts, ==, !=, \|, fread, fwrite; Number: +,-,*,/,%,<,<=,>,>=,&&,\|\|,!,&,~; Iter: seq, repeat, map, filter, each, count, reduce, min, max, take, drop; Array: length, each, map, flatmap; Math: sin, cos, tan, sinh, cosh, tanh, asin, acos, atan, asinh, acosh, atanh, sqrt, cbrt, pow, log, log10, log2, exp, fabs, floor, ceil, round, trunc, hypot, gcd, erfc, frexp, ldexp, PI, E, int |
+| 15. Integration | **Completed** | 197 tests passing, examples working |
 
 ---
 

@@ -21,5 +21,8 @@ strm_init :: proc(state: ^Strm_State) {
 	// Core functions (stdin, stdout, puts, ==, !=, |, fread, fwrite, exit, match)
 	strm_misc_init(state)
 
+	// Math functions (sin, cos, sqrt, pow, log, etc.)
+	strm_math_init(state)
+
 	// Array functions are registered in strm_iter_init via strm_ns_array
 }
