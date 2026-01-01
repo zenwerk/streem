@@ -1129,7 +1129,7 @@ parse_primary :: proc(p: ^Parser, tk: ^Token) -> Parse_Loop_Action {
 		return .Continue
 
 	case .Paren_Close:
-		// Expect ')' or lambda operators
+		// Expect ')' or lambda operators or comma (for multi-arg lambda)
 		if consumed(tk, .Right_Paren) {
 			parser_end(p)
 			return .Continue
@@ -1143,7 +1143,8 @@ parse_primary :: proc(p: ^Parser, tk: ^Token) -> Parse_Loop_Action {
 			top.node^ = lambda
 			lambda_data := &lambda.data.(Node_Lambda)
 			parser_set_state(p, .Lambda_Body)
-			parser_begin(p, .Expr, &lambda_data.body)
+			// Parse body with precedence higher than Pipe so lambda doesn't capture pipes
+			parser_begin(p, .Expr, &lambda_data.body, .Amper)
 			return .Continue
 		}
 		if consumed(tk, .Op_Lambda3) {
@@ -1157,7 +1158,59 @@ parse_primary :: proc(p: ^Parser, tk: ^Token) -> Parse_Loop_Action {
 			parser_begin(p, .Stmts, &lambda_data.body)
 			return .Continue
 		}
+		if consumed(tk, .Comma) {
+			// Multi-arg lambda: (a, b)-> expr
+			// Convert current parsed expression (should be Ident) to args list
+			first_arg := top.node^
+			if first_arg != nil && first_arg.type == .Ident {
+				first_name := first_arg.data.(Node_Ident).name
+				args := node_args_new(p.fname, p.lineno)
+				node_args_add(args, first_name)
+				node_free(first_arg)
+				top.node^ = nil
+				top.saved = args
+				parser_set_state(p, .Lambda_Args)
+				return .Continue
+			}
+			parser_error(p, "Invalid lambda parameter - expected identifier")
+			return .Break
+		}
 		parser_error(p, "Expected ')' or lambda operator")
+
+	case .Lambda_Args:
+		// Parsing lambda args: (a, b, c)-> expr
+		// top.saved contains Args node
+		if tk.type == .Ident {
+			node_args_add(top.saved, tk.lexeme)
+			tk.consumed = true
+			return .Continue
+		}
+		if consumed(tk, .Comma) {
+			// Another arg follows
+			return .Continue
+		}
+		if consumed(tk, .Op_Lambda2) {
+			// End of args: )-> expr
+			args := top.saved
+			lambda := node_lambda_new(args, nil, p.fname, p.lineno)
+			top.node^ = lambda
+			lambda_data := &lambda.data.(Node_Lambda)
+			parser_set_state(p, .Lambda_Body)
+			// Parse body with precedence higher than Pipe so lambda doesn't capture pipes
+			parser_begin(p, .Expr, &lambda_data.body, .Amper)
+			return .Continue
+		}
+		if consumed(tk, .Op_Lambda3) {
+			// End of args: )->{ stmts }
+			args := top.saved
+			lambda := node_lambda_new(args, nil, p.fname, p.lineno)
+			top.node^ = lambda
+			lambda_data := &lambda.data.(Node_Lambda)
+			parser_set_state(p, .Lambda_Body)
+			parser_begin(p, .Stmts, &lambda_data.body)
+			return .Continue
+		}
+		parser_error(p, "Expected identifier, ',' or lambda operator in lambda args")
 
 	case .Lambda_Body:
 		// After lambda body
@@ -1202,14 +1255,14 @@ parse_primary :: proc(p: ^Parser, tk: ^Token) -> Parse_Loop_Action {
 	case .Block_Content:
 		// Check for block variants
 		// Simple block {stmts}
-		// Lambda block {params -> stmts}
+		// Lambda block {x-> stmts} or {x, y-> stmts}
 		// Case block {case pattern -> stmts ...}
 		if tk.type == .Kw_Case {
 			// Case block
 			parser_set_state(p, .Case_Body)
 			return .Continue
 		}
-		// Check for lambda: {params -> stmts}
+		// Check for lambda: {-> stmts} (empty params)
 		if consumed(tk, .Op_Lambda) {
 			// Empty params
 			block := node_block_new(nil, p.fname, p.lineno)
@@ -1219,12 +1272,122 @@ parse_primary :: proc(p: ^Parser, tk: ^Token) -> Parse_Loop_Action {
 			parser_begin(p, .Stmts, &block_data.body)
 			return .Continue
 		}
+		// Check for block lambda: {ident-> ...} or {ident, ident2 -> ...}
+		if tk.type == .Ident {
+			// This might be a block lambda - save the identifier
+			first_param := tk.lexeme
+			tk.consumed = true
+			top.op = first_param  // save first param name
+			parser_set_state(p, .Block_Params)
+			return .Continue
+		}
 		// Default: simple block {stmts}
 		block := node_block_new(nil, p.fname, p.lineno)
 		top.node^ = block
 		block_data := &block.data.(Node_Lambda)
 		parser_set_state(p, .Block_Close)
 		parser_begin(p, .Stmts, &block_data.body)
+		return .Continue
+
+	case .Block_Params:
+		// After first identifier in block, check for '->' or ','
+		if consumed(tk, .Op_Lambda) {
+			// Block lambda with single param: {x-> stmts}
+			args := node_ident_new(top.op, p.fname, p.lineno)
+			// Create lambda with args, nil body, mark as block
+			block := node_lambda_new(args, nil, p.fname, p.lineno)
+			block_data := &block.data.(Node_Lambda)
+			block_data.is_block = true  // Mark as block lambda
+			top.node^ = block
+			parser_set_state(p, .Block_Close)
+			parser_begin(p, .Stmts, &block_data.body)
+			return .Continue
+		}
+		if consumed(tk, .Comma) {
+			// Multiple params: {x, y -> stmts}
+			// Create args node and add first param
+			args := node_args_new(p.fname, p.lineno)
+			node_args_add(args, top.op)
+			top.saved = args
+			parser_set_state(p, .Block_Body)
+			return .Continue
+		}
+		// Not a lambda, treat the identifier as beginning of a statement
+		// This is a block that starts with an identifier (e.g., {x + 1})
+		// Create block structure with body to be parsed
+		block := node_block_new(nil, p.fname, p.lineno)
+		top.node^ = block
+		block_data := &block.data.(Node_Lambda)
+		// Parse the block body, but first create a partial expression from the saved ident
+		// Store the ident in saved and transition to a special state
+		top.saved = node_ident_new(top.op, p.fname, p.lineno)
+		parser_set_state(p, .Block_Body)
+		return .Continue
+
+	case .Block_Body:
+		// This state handles two cases:
+		// 1. Multi-param block lambda: {x, y -> stmts}
+		// 2. Block starting with ident (not lambda): {x + 1}
+		if consumed(tk, .Op_Lambda) {
+			// Case 1: End of params, start body - top.saved should be Args node
+			// Create lambda with args, nil body, mark as block
+			block := node_lambda_new(top.saved, nil, p.fname, p.lineno)
+			block_data := &block.data.(Node_Lambda)
+			block_data.is_block = true
+			top.node^ = block
+			parser_set_state(p, .Block_Close)
+			parser_begin(p, .Stmts, &block_data.body)
+			return .Continue
+		}
+		if tk.type == .Ident && top.saved != nil && top.saved.type == .Args {
+			// Case 1: Another param in multi-param lambda
+			node_args_add(top.saved, tk.lexeme)
+			tk.consumed = true
+			return .Continue
+		}
+		if consumed(tk, .Comma) && top.saved != nil && top.saved.type == .Args {
+			// Case 1: Comma between params in multi-param lambda
+			return .Continue
+		}
+		// Case 2: Block body starting with saved ident expression
+		// Need to complete parsing as: block { ident <op> rest... ; more stmts }
+		block_data := &top.node^.data.(Node_Lambda)
+		// Create nodes container for body
+		block_data.body = node_nodes_new(p.fname, p.lineno)
+		nodes := &block_data.body.data.(Node_Nodes)
+		append(&nodes.nodes, nil)
+		// Start building expression with saved ident as LHS
+		nodes.nodes[0] = top.saved
+		parser_set_state(p, .Block_Close)
+		// Now parse remaining of expression and statements
+		// We need to handle the binary operator case
+		if is_binary_op(tk.type) {
+			// Continue expression parsing from the ident
+			op := token_to_op(tk.type)
+			prec := token_precedence(tk.type)
+			tk.consumed = true
+			// Create binary node with saved ident as LHS
+			bin := node_op_new(op, top.saved, nil, p.fname, p.lineno)
+			nodes.nodes[0] = bin
+			bin_data := &bin.data.(Node_Op)
+			// Compute next precedence for RHS
+			next_prec := prec
+			if !is_right_assoc(tk.type) {
+				next_prec = Precedence(int(prec) + 1)
+			}
+			// Parse RHS and then more statements
+			parser_begin(p, .Expr_Rhs, &bin_data.rhs, next_prec)
+			return .Continue
+		}
+		// Just a statement (variable reference), continue with more statements
+		if tk.type != .Right_Brace && !is_term(tk) {
+			// More statements follow
+			append(&nodes.nodes, nil)
+			idx := len(nodes.nodes) - 1
+			parser_begin(p, .Stmts, &block_data.body)
+			return .Continue
+		}
+		// Block ends
 		return .Continue
 
 	case .Block_Close:

@@ -696,9 +696,10 @@ Windowing:
 - [ ] Resource cleanup (deferred)
 
 ### 15.4 Known Issues (discovered during testing)
-- Block lambda syntax `{x-> expr}` not yet supported (workaround: use `((x)-> expr)`)
-- Multi-argument lambda `(a, b)-> expr` parsing issue
-- Lambda in pipe operator: use parentheses `seq(3) | ((x)-> x*2) | stdout`
+All known parser issues have been resolved:
+- [x] Block lambda syntax `{x-> expr}` - now supported
+- [x] Multi-argument lambda `(a, b)-> expr` - now works correctly
+- [x] Lambda in pipe operator - no longer needs parentheses: `seq(3) | (x)-> x*2 | stdout` works
 
 ---
 
