@@ -5,89 +5,40 @@ import "core:os"
 import "core:strings"
 import "core:bufio"
 import "core:io"
+import "core:flags"
 
-// CLI modes
-Run_Mode :: enum {
-	File,         // execute file
-	String,       // execute inline code (-e)
-	Syntax_Check, // syntax check only (-c)
-	Verbose,      // verbose/AST dump (-v)
-	Repl,         // interactive REPL mode
+// CLI options structure
+Options :: struct {
+	input_string:      string `args:"name=e" usage:"Execute inline code"`,
+	syntax_check_only: bool `args:"name=c" usage:"Syntax check only"`,
+	verbose:           bool `args:"name=v" usage:"Verbose mode (dump AST)"`,
+	input_file:        string `args:"pos=0" usage:"Input file to execute"`,
 }
 
 // Main entry point
 main :: proc() {
-	args := os.args
-	input_string: string
-	input_file: string
-	verbose := false
-	syntax_check_only := false
-
-	// Parse arguments
-	i := 1
-	for i < len(args) {
-		arg := args[i]
-
-		if arg == "-e" {
-			// Execute inline code
-			i += 1
-			if i < len(args) {
-				input_string = args[i]
-			} else {
-				fmt.eprintln("Error: -e requires an argument")
-				os.exit(1)
-			}
-		} else if arg == "-c" {
-			// Syntax check only
-			syntax_check_only = true
-		} else if arg == "-v" {
-			// Verbose mode (AST dump)
-			verbose = true
-		} else if arg == "-h" || arg == "--help" {
-			print_usage()
-			os.exit(0)
-		} else if strings.has_prefix(arg, "-") {
-			fmt.eprintfln("Error: Unknown option: %s", arg)
-			print_usage()
-			os.exit(1)
-		} else {
-			// Input file
-			input_file = arg
-		}
-
-		i += 1
-	}
+	opt: Options
+	style: flags.Parsing_Style = .Unix
+	flags.parse_or_exit(&opt, os.args, style)
 
 	// Determine what to run
-	if syntax_check_only {
-		if input_file != "" {
-			syntax_check_file(input_file)
-		} else if input_string != "" {
-			syntax_check_string(input_string)
+	if opt.syntax_check_only {
+		if opt.input_file != "" {
+			syntax_check_file(opt.input_file)
+		} else if opt.input_string != "" {
+			syntax_check_string(opt.input_string)
 		} else {
 			fmt.eprintln("Error: No input specified for syntax check")
 			os.exit(1)
 		}
-	} else if input_string != "" {
-		run_string(input_string, verbose)
-	} else if input_file != "" {
-		run_file(input_file, verbose)
+	} else if opt.input_string != "" {
+		run_string(opt.input_string, opt.verbose)
+	} else if opt.input_file != "" {
+		run_file(opt.input_file, opt.verbose)
 	} else {
 		// No input specified - start REPL
-		run_repl(verbose)
+		run_repl(opt.verbose)
 	}
-}
-
-print_usage :: proc() {
-	fmt.println("Usage: streem [options] [file]")
-	fmt.println()
-	fmt.println("Options:")
-	fmt.println("  -e CODE    Execute inline code")
-	fmt.println("  -c         Syntax check only")
-	fmt.println("  -v         Verbose mode (dump AST)")
-	fmt.println("  -h, --help Show this help")
-	fmt.println()
-	fmt.println("If no file is specified, starts interactive REPL mode.")
 }
 
 // Run a streem file
