@@ -51,8 +51,10 @@ Parse_State_Kind :: enum {
 
 	// Emit/Skip/Return
 	Emit_,
+	Emit_Args,      // parsing emit arguments (comma-separated)
 	Skip_,
 	Return_,
+	Return_Args,    // parsing return arguments (comma-separated)
 
 	// Expression states (precedence-based)
 	Expr,
@@ -794,37 +796,73 @@ parse_stmt :: proc(p: ^Parser, tk: ^Token) -> Parse_Loop_Action {
 		return .Continue
 
 	case .Emit_:
-		// emit can have optional args
+		// emit can have optional args (comma-separated)
 		if is_term(tk) || tk.type == .Right_Brace || tk.type == .Eof {
 			top.node^ = node_emit_new(nil, p.fname, p.lineno)
 			parser_end(p)
 			return .Continue
 		}
-		// Parse expression
+		// Parse first argument, may have more
 		emit := node_emit_new(nil, p.fname, p.lineno)
 		top.node^ = emit
 		emit_data := &emit.data.(Node_Emit)
-		parser_set_state(p, .Skip_) // reuse for completion
-		parser_begin(p, .Expr, &emit_data.value)
+		// Create array for multiple args
+		emit_data.value = node_array_new(p.fname, p.lineno)
+		arr_data := &emit_data.value.data.(Node_Array)
+		append(&arr_data.elements, nil)
+		parser_set_state(p, .Emit_Args)
+		parser_begin(p, .Expr, &arr_data.elements[0])
+		return .Continue
+
+	case .Emit_Args:
+		// After first arg, check for more or end
+		if consumed(tk, .Comma) {
+			emit_data := &top.node^.data.(Node_Emit)
+			arr_data := &emit_data.value.data.(Node_Array)
+			append(&arr_data.elements, nil)
+			idx := len(arr_data.elements) - 1
+			parser_begin(p, .Expr, &arr_data.elements[idx])
+			return .Continue
+		}
+		// No more args, end emit
+		parser_end(p)
 		return .Continue
 
 	case .Return_:
-		// return can have optional args
+		// return can have optional args (comma-separated)
 		if is_term(tk) || tk.type == .Right_Brace || tk.type == .Eof {
 			top.node^ = node_return_new(nil, p.fname, p.lineno)
 			parser_end(p)
 			return .Continue
 		}
-		// Parse expression
+		// Parse first argument, may have more
 		ret := node_return_new(nil, p.fname, p.lineno)
 		top.node^ = ret
 		ret_data := &ret.data.(Node_Return)
-		parser_set_state(p, .Skip_)
-		parser_begin(p, .Expr, &ret_data.value)
+		// Create array for multiple args
+		ret_data.value = node_array_new(p.fname, p.lineno)
+		arr_data := &ret_data.value.data.(Node_Array)
+		append(&arr_data.elements, nil)
+		parser_set_state(p, .Return_Args)
+		parser_begin(p, .Expr, &arr_data.elements[0])
+		return .Continue
+
+	case .Return_Args:
+		// After first arg, check for more or end
+		if consumed(tk, .Comma) {
+			ret_data := &top.node^.data.(Node_Return)
+			arr_data := &ret_data.value.data.(Node_Array)
+			append(&arr_data.elements, nil)
+			idx := len(arr_data.elements) - 1
+			parser_begin(p, .Expr, &arr_data.elements[idx])
+			return .Continue
+		}
+		// No more args, end return
+		parser_end(p)
 		return .Continue
 
 	case .Skip_:
-		// After emit/return expr
+		// After emit/return expr (no longer used, but keep for safety)
 		parser_end(p)
 		return .Continue
 	}
@@ -1723,7 +1761,7 @@ parser_push_token :: proc(p: ^Parser, token: Token) -> Parse_Result {
 			action = parse_topstmt(p, &tk)
 		case .Stmts, .Stmt_Term:
 			action = parse_stmts(p, &tk)
-		case .Stmt, .Let_Assign, .Let_Assign_Rasgn, .Def_Func, .Def_Args, .Def_Close_Paren, .Def_Body_Start, .Def_Body, .Emit_, .Skip_, .Return_:
+		case .Stmt, .Let_Assign, .Let_Assign_Rasgn, .Def_Func, .Def_Args, .Def_Close_Paren, .Def_Body_Start, .Def_Body, .Emit_, .Emit_Args, .Skip_, .Return_, .Return_Args:
 			action = parse_stmt(p, &tk)
 		case .Expr, .Expr_Op, .Expr_Rhs, .Expr_Rhs_Op, .Unary:
 			action = parse_expr(p, &tk)
