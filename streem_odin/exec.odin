@@ -771,21 +771,34 @@ lambda_call :: proc(strm: ^Strm_Stream, closure_state: ^Strm_State, lambda_node:
 		data := &lambda_node.data.(Node_Lambda)
 
 		// Bind arguments
-		if data.args != nil && data.args.type == .Args {
-			arg_names := &data.args.data.(Node_Args)
-			if len(arg_names.names) != len(args) {
-				if strm != nil {
-					strm_raise(strm, "wrong number of arguments")
-					if strm.exc != nil {
-						strm.exc.fname = lambda_node.fname
-						strm.exc.lineno = lambda_node.lineno
+		if data.args != nil {
+			if data.args.type == .Args {
+				arg_names := &data.args.data.(Node_Args)
+				if len(arg_names.names) != len(args) {
+					if strm != nil {
+						strm_raise(strm, "wrong number of arguments")
+						if strm.exc != nil {
+							strm.exc.fname = lambda_node.fname
+							strm.exc.lineno = lambda_node.lineno
+						}
 					}
+					return .Error
 				}
-				return .Error
-			}
-			for i := 0; i < len(arg_names.names); i += 1 {
-				name := strm_str_intern(arg_names.names[i])
-				strm_var_set(local, name, args[i])
+				for i := 0; i < len(arg_names.names); i += 1 {
+					name := strm_str_intern(arg_names.names[i])
+					strm_var_set(local, name, args[i])
+				}
+			} else if data.args.type == .Ident {
+				// Single identifier arg
+				if len(args) != 1 {
+					if strm != nil {
+						strm_raise(strm, "wrong number of arguments")
+					}
+					return .Error
+				}
+				arg_ident := &data.args.data.(Node_Ident)
+				name := strm_str_intern(arg_ident.name)
+				strm_var_set(local, name, args[0])
 			}
 		} else if len(args) > 0 {
 			// No args expected but args provided

@@ -91,6 +91,13 @@ strm_stream_new :: proc(mode: Stream_Mode, start_func: Stream_Start_Func, close_
 	return strm
 }
 
+// Task callback wrapper for strm_stream_close
+// This is needed because Task_Func signature differs from strm_stream_close
+stream_close_cb :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
+	strm_stream_close(strm)
+	return STRM_OK
+}
+
 // Close stream and propagate to downstream
 // Reference: src/core.c strm_stream_close
 strm_stream_close :: proc(strm: ^Strm_Stream) {
@@ -129,11 +136,11 @@ strm_stream_close :: proc(strm: ^Strm_Stream) {
 
 	// Propagate close to downstream
 	if strm.dst != nil {
-		strm_task_push(strm.dst, cast(Task_Func)strm_stream_close, strm_nil_value())
+		strm_task_push(strm.dst, stream_close_cb, strm_nil_value())
 	}
 
 	for dst in strm.rest {
-		strm_task_push(dst, cast(Task_Func)strm_stream_close, strm_nil_value())
+		strm_task_push(dst, stream_close_cb, strm_nil_value())
 	}
 
 	// Free rest array
@@ -472,6 +479,9 @@ arr_exec :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
 // Reference: src/exec.c blk_exec
 blk_exec :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
 	lambda := cast(^Strm_Lambda)strm.data
+	if lambda == nil {
+		return STRM_NG
+	}
 	ret := strm_nil_value()
 
 	// Create execution state with closure as parent
@@ -487,10 +497,17 @@ blk_exec :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
 	lambda_data := &nlmbd.data.(Node_Lambda)
 
 	// Bind argument if lambda has one
-	if lambda_data.args != nil && lambda_data.args.type == .Args {
-		arg_names := &lambda_data.args.data.(Node_Args)
-		if len(arg_names.names) == 1 {
-			arg_name := strm_str_intern(arg_names.names[0])
+	if lambda_data.args != nil {
+		if lambda_data.args.type == .Args {
+			arg_names := &lambda_data.args.data.(Node_Args)
+			if len(arg_names.names) == 1 {
+				arg_name := strm_str_intern(arg_names.names[0])
+				strm_var_set(c, arg_name, data)
+			}
+		} else if lambda_data.args.type == .Ident {
+			// Single identifier arg
+			arg_ident := &lambda_data.args.data.(Node_Ident)
+			arg_name := strm_str_intern(arg_ident.name)
 			strm_var_set(c, arg_name, data)
 		}
 	}
@@ -505,7 +522,6 @@ blk_exec :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
 			ret = exc.arg
 			strm_clear_exc(strm)
 		} else {
-			// TODO: if verbose, strm_eprint(strm)
 			return STRM_NG
 		}
 	}

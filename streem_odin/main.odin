@@ -15,9 +15,10 @@ Run_Mode :: enum {
 // Main entry point
 main :: proc() {
 	args := os.args
-	mode := Run_Mode.File
 	input_string: string
 	input_file: string
+	verbose := false
+	syntax_check_only := false
 
 	// Parse arguments
 	i := 1
@@ -26,7 +27,6 @@ main :: proc() {
 
 		if arg == "-e" {
 			// Execute inline code
-			mode = .String
 			i += 1
 			if i < len(args) {
 				input_string = args[i]
@@ -36,10 +36,10 @@ main :: proc() {
 			}
 		} else if arg == "-c" {
 			// Syntax check only
-			mode = .Syntax_Check
+			syntax_check_only = true
 		} else if arg == "-v" {
 			// Verbose mode (AST dump)
-			mode = .Verbose
+			verbose = true
 		} else if arg == "-h" || arg == "--help" {
 			print_usage()
 			os.exit(0)
@@ -55,24 +55,8 @@ main :: proc() {
 		i += 1
 	}
 
-	// Run based on mode
-	switch mode {
-	case .File:
-		if input_file == "" {
-			fmt.eprintln("Error: No input file specified")
-			print_usage()
-			os.exit(1)
-		}
-		run_file(input_file, false)
-
-	case .String:
-		if input_string == "" {
-			fmt.eprintln("Error: No input string specified")
-			os.exit(1)
-		}
-		run_string(input_string, false)
-
-	case .Syntax_Check:
+	// Determine what to run
+	if syntax_check_only {
 		if input_file != "" {
 			syntax_check_file(input_file)
 		} else if input_string != "" {
@@ -81,16 +65,14 @@ main :: proc() {
 			fmt.eprintln("Error: No input specified for syntax check")
 			os.exit(1)
 		}
-
-	case .Verbose:
-		if input_file != "" {
-			run_file(input_file, true)
-		} else if input_string != "" {
-			run_string(input_string, true)
-		} else {
-			fmt.eprintln("Error: No input specified for verbose mode")
-			os.exit(1)
-		}
+	} else if input_string != "" {
+		run_string(input_string, verbose)
+	} else if input_file != "" {
+		run_file(input_file, verbose)
+	} else {
+		fmt.eprintln("Error: No input specified")
+		print_usage()
+		os.exit(1)
 	}
 }
 
@@ -166,6 +148,9 @@ run_source :: proc(source: string, filename: string, verbose: bool) {
 
 	// Run event loop
 	strm_loop()
+
+	// Cleanup workers
+	worker_cleanup()
 }
 
 // Syntax check a file
@@ -353,11 +338,6 @@ print_indent :: proc(n: int) {
 
 // Initialize built-in functions
 init_builtins :: proc(state: ^Strm_State) {
-	// TODO: Register all built-in functions
-	// This will be implemented in Phase 14
-
-	// For now, just stub the basics
-	// strm_var_def(state, "stdin", ...)
-	// strm_var_def(state, "stdout", ...)
-	// strm_var_def(state, "puts", ...)
+	// Initialize all built-in functions (Phase 14)
+	strm_init(state)
 }
