@@ -253,8 +253,6 @@ lex_scan_string :: proc(lex: ^Lex, start_offset: int) -> Token {
 		}
 	}
 
-	lexeme := lex.input[start_offset:lex.offset]
-
 	// Check if this is a label ("string":)
 	if lex_peek(lex) == ':' && lex_peek_n(lex, 1) != ':' {
 		lex_advance(lex) // consume ':'
@@ -262,6 +260,8 @@ lex_scan_string :: proc(lex: ^Lex, start_offset: int) -> Token {
 		return lex_create_token(lex, .Label, lex.input[start_offset + 1:lex.offset - 2])
 	}
 
+	// Return string content without quotes
+	lexeme := lex.input[start_offset + 1:lex.offset - 1]
 	return lex_create_token(lex, .Lit_String, lexeme)
 }
 

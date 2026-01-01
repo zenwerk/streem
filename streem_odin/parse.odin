@@ -1003,6 +1003,10 @@ parse_if :: proc(p: ^Parser, tk: ^Token) -> Parse_Loop_Action {
 
 	case .If_Then:
 		// After then expr, check for else
+		// Skip newlines before 'else' to allow multi-line if-else
+		if consume_term(tk) {
+			return .Continue
+		}
 		if consumed(tk, .Kw_Else) {
 			if_data := &top.saved.data.(Node_If)
 			parser_set_state(p, .If_Else)
@@ -1473,10 +1477,13 @@ parse_func_call :: proc(p: ^Parser, tk: ^Token) -> Parse_Loop_Action {
 			// Function call with block: fname { block }
 			call := node_call_new(top.op, nil, p.fname, p.lineno)
 			top.node^ = call
-			// Parse block
+			// Parse block and wrap in array for consistency with func(args)
 			call_data := &call.data.(Node_Call)
+			call_data.args = node_array_new(p.fname, p.lineno)
+			arr_data := &call_data.args.data.(Node_Array)
+			append(&arr_data.elements, nil)
 			parser_set_state(p, .Func_Opt_Block)
-			parser_begin(p, .Block_Content, &call_data.args) // reuse args for block
+			parser_begin(p, .Block_Content, &arr_data.elements[0])
 			return .Continue
 		}
 		// Just a variable reference
