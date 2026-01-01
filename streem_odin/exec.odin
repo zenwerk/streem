@@ -489,6 +489,14 @@ exec_nodes :: proc(strm: ^Strm_Stream, state: ^Strm_State, node: ^Node, ret: ^St
 // ============================================================================
 
 exec_lambda :: proc(strm: ^Strm_Stream, state: ^Strm_State, node: ^Node, ret: ^Strm_Value) -> Exec_Result {
+	// Handle PLambda (pattern matching lambda) separately
+	if node.type == .PLambda {
+		// Create lambda closure for pattern matching
+		lambda := strm_lambda_new(node, state)
+		ret^ = strm_ptr_value(lambda)
+		return .Ok
+	}
+
 	data := &node.data.(Node_Lambda)
 
 	// Block without params: execute immediately
@@ -1096,15 +1104,63 @@ pattern_match :: proc(strm: ^Strm_Stream, state: ^Strm_State, npat: ^Node, argc:
 	// Handle PArray pattern
 	if npat.type == .PArray {
 		parray := &npat.data.(Node_PArray)
-		if len(parray.patterns) != argc {
-			return false
-		}
-		for i := 0; i < argc; i += 1 {
-			if !pmatch(strm, state, parray.patterns[i], argv[i]) {
-				return false
+
+		// Check if pattern contains splat
+		splat_idx := -1
+		for i := 0; i < len(parray.patterns); i += 1 {
+			if parray.patterns[i] != nil && parray.patterns[i].type == .Splat {
+				splat_idx = i
+				break
 			}
 		}
-		return true
+
+		if splat_idx >= 0 {
+			// Pattern contains splat
+			head_len := splat_idx
+			tail_len := len(parray.patterns) - splat_idx - 1
+
+			if argc < head_len + tail_len {
+				return false
+			}
+
+			// Match head patterns
+			for i := 0; i < head_len; i += 1 {
+				if !pmatch(strm, state, parray.patterns[i], argv[i]) {
+					return false
+				}
+			}
+
+			// Match splat (rest elements)
+			rest_start := head_len
+			rest_end := argc - tail_len
+			rest_values := argv[rest_start:rest_end]
+			rest_ary := strm_ary_new(rest_values)
+			splat_node := parray.patterns[splat_idx]
+			splat_data := &splat_node.data.(Node_Splat)
+			if !pmatch(strm, state, splat_data.expr, strm_ary_value(rest_ary)) {
+				return false
+			}
+
+			// Match tail patterns
+			for i := 0; i < tail_len; i += 1 {
+				if !pmatch(strm, state, parray.patterns[splat_idx + 1 + i], argv[argc - tail_len + i]) {
+					return false
+				}
+			}
+
+			return true
+		} else {
+			// No splat - exact length match required
+			if len(parray.patterns) != argc {
+				return false
+			}
+			for i := 0; i < argc; i += 1 {
+				if !pmatch(strm, state, parray.patterns[i], argv[i]) {
+					return false
+				}
+			}
+			return true
+		}
 	}
 
 	return false

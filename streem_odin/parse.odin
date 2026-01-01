@@ -117,6 +117,7 @@ Parse_State_Kind :: enum {
 
 	// Pattern matching states
 	Pattern,
+	Pattern_Next,   // after first pattern element, check for comma or ->
 	Pterm,
 	Pary,
 	Pary_Next,
@@ -128,6 +129,7 @@ Parse_State_Kind :: enum {
 	Case_Body,
 	Case_Pattern,
 	Case_Cond,
+	Case_Cond_Expr, // parsing guard expression
 	Case_Stmts,
 	Plambda,
 }
@@ -1567,12 +1569,16 @@ parse_func_call :: proc(p: ^Parser, tk: ^Token) -> Parse_Loop_Action {
 	case .Func_Opt_Block:
 		// Optional block after function call
 		if consumed(tk, .Left_Brace) {
-			// Has block - for now just parse as stmts
-			block := node_block_new(nil, p.fname, p.lineno)
-			block_data := &block.data.(Node_Lambda)
-			parser_set_state(p, .Block_Close)
-			parser_begin(p, .Stmts, &block_data.body)
-			// TODO: attach block to call
+			// Has block - append to args and parse block content
+			call_data := &top.node^.data.(Node_Call)
+			if call_data.args == nil {
+				call_data.args = node_array_new(p.fname, p.lineno)
+			}
+			arr_data := &call_data.args.data.(Node_Array)
+			append(&arr_data.elements, nil)
+			idx := len(arr_data.elements) - 1
+			parser_set_state(p, .Method_Call)  // After block, check for method call chain
+			parser_begin(p, .Block_Content, &arr_data.elements[idx])
 			return .Continue
 		}
 		// No block, check for method call
@@ -1639,7 +1645,7 @@ parse_case :: proc(p: ^Parser, tk: ^Token) -> Parse_Loop_Action {
 	#partial switch top.kind {
 	case .Case_Body:
 		if consumed(tk, .Kw_Case) {
-			// Create plambda
+			// Create plambda with pattern array
 			plambda := node_plambda_new(nil, nil, p.fname, p.lineno)
 			if top.node^ == nil {
 				top.node^ = plambda
@@ -1677,34 +1683,186 @@ parse_case :: proc(p: ^Parser, tk: ^Token) -> Parse_Loop_Action {
 			return .Continue
 		}
 		if consumed(tk, .Kw_If) {
-			// Guard condition
-			parser_set_state(p, .Case_Cond)
-			return .Continue
-		}
-		// Parse pattern (simplified - just use expr for now)
-		plambda_data := &top.saved.data.(Node_PLambda)
-		parser_set_state(p, .Case_Cond)
-		parser_begin(p, .Expr, &plambda_data.pat)
-		return .Continue
-
-	case .Case_Cond:
-		// Check for 'if' guard or '->'
-		if consumed(tk, .Kw_If) {
+			// Guard condition (no pattern)
 			plambda_data := &top.saved.data.(Node_PLambda)
+			parser_set_state(p, .Case_Cond_Expr)
 			parser_begin(p, .Expr, &plambda_data.cond)
 			return .Continue
 		}
+		// Parse first pattern element
+		// Create pattern array to hold multiple pattern elements
+		plambda_data := &top.saved.data.(Node_PLambda)
+		plambda_data.pat = node_parray_new(p.fname, p.lineno)
+		pat_data := &plambda_data.pat.data.(Node_PArray)
+		append(&pat_data.patterns, nil)
+		parser_set_state(p, .Pattern_Next)
+		parser_begin(p, .Pattern, &pat_data.patterns[0])
+		return .Continue
+
+	case .Pattern:
+		// Parse a single pattern element (pterm)
+		// Check for splat pattern: *ident
+		if consumed(tk, .Op_Mult) {
+			parser_set_state(p, .Psplat)
+			return .Continue
+		}
+		// Parse pterm (similar to primary but for patterns)
+		// Array pattern: []
+		if consumed(tk, .Left_Bracket) {
+			parser_set_state(p, .Pary)
+			return .Continue
+		}
+		// Identifier, literal, nil, true, false
+		if tk.type == .Ident {
+			top.node^ = node_ident_new(tk.lexeme, p.fname, p.lineno)
+			tk.consumed = true
+			parser_end(p)
+			return .Continue
+		}
+		if tk.type == .Lit_Int {
+			value, ok := strconv.parse_i64(tk.lexeme)
+			top.node^ = node_int_new(value if ok else 0, p.fname, p.lineno)
+			tk.consumed = true
+			parser_end(p)
+			return .Continue
+		}
+		if tk.type == .Lit_Float {
+			value, ok := strconv.parse_f64(tk.lexeme)
+			top.node^ = node_float_new(value if ok else 0.0, p.fname, p.lineno)
+			tk.consumed = true
+			parser_end(p)
+			return .Continue
+		}
+		if tk.type == .Lit_String {
+			top.node^ = node_string_new(tk.lexeme, p.fname, p.lineno)
+			tk.consumed = true
+			parser_end(p)
+			return .Continue
+		}
+		if consumed(tk, .Kw_Nil) {
+			top.node^ = node_nil_new(p.fname, p.lineno)
+			parser_end(p)
+			return .Continue
+		}
+		if consumed(tk, .Kw_True) {
+			top.node^ = node_bool_new(true, p.fname, p.lineno)
+			parser_end(p)
+			return .Continue
+		}
+		if consumed(tk, .Kw_False) {
+			top.node^ = node_bool_new(false, p.fname, p.lineno)
+			parser_end(p)
+			return .Continue
+		}
+		parser_error(p, "Expected pattern element")
+
+	case .Psplat:
+		// Expect identifier after *
+		if tk.type == .Ident {
+			splat_node := node_splat_new(node_ident_new(tk.lexeme, p.fname, p.lineno), p.fname, p.lineno)
+			top.node^ = splat_node
+			tk.consumed = true
+			parser_end(p)
+			return .Continue
+		}
+		parser_error(p, "Expected identifier after '*' in pattern")
+
+	case .Pary:
+		// Array pattern: [] or [pattern, pattern, ...]
+		if consumed(tk, .Right_Bracket) {
+			// Empty array pattern
+			top.node^ = node_parray_new(p.fname, p.lineno)
+			parser_end(p)
+			return .Continue
+		}
+		// Parse pattern elements inside array
+		pary := node_parray_new(p.fname, p.lineno)
+		top.node^ = pary
+		pary_data := &pary.data.(Node_PArray)
+		append(&pary_data.patterns, nil)
+		parser_set_state(p, .Pary_Next)
+		parser_begin(p, .Pattern, &pary_data.patterns[0])
+		return .Continue
+
+	case .Pary_Next:
+		// After pattern in array, expect ',' or ']'
+		if consumed(tk, .Right_Bracket) {
+			parser_end(p)
+			return .Continue
+		}
+		if consumed(tk, .Comma) {
+			pary_data := &top.node^.data.(Node_PArray)
+			append(&pary_data.patterns, nil)
+			idx := len(pary_data.patterns) - 1
+			parser_begin(p, .Pattern, &pary_data.patterns[idx])
+			return .Continue
+		}
+		parser_error(p, "Expected ',' or ']' in array pattern")
+
+	case .Pattern_Next:
+		// After first pattern element, check for comma (more patterns) or if/->
+		if consumed(tk, .Comma) {
+			// More pattern elements
+			plambda_data := &top.saved.data.(Node_PLambda)
+			pat_data := &plambda_data.pat.data.(Node_PArray)
+			append(&pat_data.patterns, nil)
+			idx := len(pat_data.patterns) - 1
+			parser_begin(p, .Pattern, &pat_data.patterns[idx])
+			return .Continue
+		}
+		if consumed(tk, .Op_Lambda) {
+			// End of pattern, start body
+			parser_set_state(p, .Case_Stmts)
+			return .Continue
+		}
+		if consumed(tk, .Kw_If) {
+			// Guard condition
+			plambda_data := &top.saved.data.(Node_PLambda)
+			parser_set_state(p, .Case_Cond_Expr)
+			parser_begin(p, .Expr, &plambda_data.cond)
+			return .Continue
+		}
+		parser_error(p, "Expected ',', 'if' or '->' after pattern")
+
+	case .Case_Cond:
+		// After guard expression parsed, expect '->'
 		if consumed(tk, .Op_Lambda) {
 			parser_set_state(p, .Case_Stmts)
 			return .Continue
 		}
-		parser_error(p, "Expected 'if' or '->' in case pattern")
+		parser_error(p, "Expected '->' after guard condition")
+
+	case .Case_Cond_Expr:
+		// After guard expression parsed, expect '->'
+		if consumed(tk, .Op_Lambda) {
+			parser_set_state(p, .Case_Stmts)
+			return .Continue
+		}
+		parser_error(p, "Expected '->' after guard condition")
 
 	case .Case_Stmts:
-		// Parse case body
+		// Parse case body - but case body ends at 'case', 'else' or '}'
+		// So we need to handle statements inline here
 		plambda_data := &top.saved.data.(Node_PLambda)
-		parser_set_state(p, .Case_Body)
-		parser_begin(p, .Stmts, &plambda_data.body)
+
+		// Skip terms
+		if consume_term(tk) {
+			return .Continue
+		}
+		// Check for end of case body
+		if tk.type == .Kw_Case || tk.type == .Kw_Else || tk.type == .Right_Brace {
+			// End of this case body, go back to Case_Body
+			parser_set_state(p, .Case_Body)
+			return .Continue
+		}
+		// Parse statement for case body
+		if plambda_data.body == nil {
+			plambda_data.body = node_nodes_new(p.fname, p.lineno)
+		}
+		nodes := &plambda_data.body.data.(Node_Nodes)
+		append(&nodes.nodes, nil)
+		idx := len(nodes.nodes) - 1
+		parser_begin(p, .Stmt, &nodes.nodes[idx])
 		return .Continue
 	}
 
@@ -1771,7 +1929,7 @@ parser_push_token :: proc(p: ^Parser, token: Token) -> Parse_Result {
 			action = parse_primary(p, &tk)
 		case .Func_Call, .Func_Args, .Func_Args_Expr, .Func_Args_Next, .Func_Close, .Func_Opt_Block, .Method_Call, .Method_Name, .Method_Args_Start:
 			action = parse_func_call(p, &tk)
-		case .Case_Body, .Case_Pattern, .Case_Cond, .Case_Stmts, .Plambda:
+		case .Case_Body, .Case_Pattern, .Case_Cond, .Case_Cond_Expr, .Case_Stmts, .Plambda, .Pattern, .Pattern_Next, .Pterm, .Pary, .Pary_Next, .Pstruct, .Pstruct_Next, .Psplat:
 			action = parse_case(p, &tk)
 		case:
 			// Unknown state

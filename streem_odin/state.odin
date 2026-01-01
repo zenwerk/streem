@@ -163,12 +163,21 @@ strm_var_get :: proc {
 
 // Pattern match assignment
 // This is used for destructuring patterns like `[a, b] = [1, 2]`
+// If the variable is already bound, compare with the new value
 // Returns STRM_OK on success, STRM_NG on failure
 strm_var_match :: proc(state: ^Strm_State, name: Strm_String, value: Strm_Value) -> int {
 	if state == nil {
 		return STRM_NG
 	}
-	// For simple identifier binding, just set the variable
+	// Check if variable is already bound in this scope
+	if existing, ok := state.env[name]; ok {
+		// Variable already bound - compare values
+		if strm_value_eq(existing, value) {
+			return STRM_OK
+		}
+		return STRM_NG
+	}
+	// Not bound yet - set the variable
 	state.env[name] = value
 	return STRM_OK
 }
