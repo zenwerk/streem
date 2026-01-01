@@ -3,6 +3,8 @@ package streem
 import "core:fmt"
 import "core:os"
 import "core:strings"
+import "core:bufio"
+import "core:io"
 
 // CLI modes
 Run_Mode :: enum {
@@ -10,6 +12,7 @@ Run_Mode :: enum {
 	String,       // execute inline code (-e)
 	Syntax_Check, // syntax check only (-c)
 	Verbose,      // verbose/AST dump (-v)
+	Repl,         // interactive REPL mode
 }
 
 // Main entry point
@@ -70,9 +73,8 @@ main :: proc() {
 	} else if input_file != "" {
 		run_file(input_file, verbose)
 	} else {
-		fmt.eprintln("Error: No input specified")
-		print_usage()
-		os.exit(1)
+		// No input specified - start REPL
+		run_repl(verbose)
 	}
 }
 
@@ -84,6 +86,8 @@ print_usage :: proc() {
 	fmt.println("  -c         Syntax check only")
 	fmt.println("  -v         Verbose mode (dump AST)")
 	fmt.println("  -h, --help Show this help")
+	fmt.println()
+	fmt.println("If no file is specified, starts interactive REPL mode.")
 }
 
 // Run a streem file
@@ -340,4 +344,192 @@ print_indent :: proc(n: int) {
 init_builtins :: proc(state: ^Strm_State) {
 	// Initialize all built-in functions (Phase 14)
 	strm_init(state)
+}
+
+// ============================================================================
+// REPL (Read-Eval-Print Loop)
+// ============================================================================
+
+// Run interactive REPL
+run_repl :: proc(verbose: bool) {
+	fmt.println("Streem REPL (Odin port)")
+	fmt.println("Type 'exit' or Ctrl+D to quit")
+	fmt.println()
+
+	// Initialize namespace system
+	strm_ns_init()
+	defer strm_ns_cleanup()
+
+	// Create persistent global state for REPL session
+	state := strm_state_new()
+	defer strm_state_destroy(state)
+
+	// Initialize built-ins
+	init_builtins(state)
+
+	// Input buffer for line continuation
+	input_buffer: strings.Builder
+	strings.builder_init(&input_buffer)
+	defer strings.builder_destroy(&input_buffer)
+
+	continuation := false
+
+	// Create buffered reader for stdin
+	stdin_stream := os.stream_from_handle(os.stdin)
+	reader: bufio.Reader
+	bufio.reader_init(&reader, stdin_stream)
+	defer bufio.reader_destroy(&reader)
+
+	for {
+		// Print prompt
+		if continuation {
+			fmt.print("... ")
+		} else {
+			fmt.print("streem> ")
+		}
+
+		// Read line
+		line, err := bufio.reader_read_string(&reader, '\n')
+		if err != nil {
+			// EOF or error
+			if strings.builder_len(input_buffer) > 0 {
+				fmt.println()
+				fmt.eprintln("Error: Incomplete input")
+			} else {
+				fmt.println()
+			}
+			break
+		}
+
+		// Remove trailing newline
+		line = strings.trim_right(line, "\r\n")
+
+		// Check for exit command
+		if !continuation && (line == "exit" || line == "quit") {
+			break
+		}
+
+		// Check for empty line
+		if !continuation && strings.trim_space(line) == "" {
+			continue
+		}
+
+		// Append to input buffer
+		if strings.builder_len(input_buffer) > 0 {
+			strings.write_string(&input_buffer, "\n")
+		}
+		strings.write_string(&input_buffer, line)
+
+		// Try to parse the accumulated input
+		source := strings.to_string(input_buffer)
+		complete, result := try_parse_and_eval(state, source, verbose)
+
+		if complete {
+			// Successfully parsed and evaluated (or error)
+			if result != "" {
+				fmt.println(result)
+			}
+			// Clear buffer for next input
+			strings.builder_reset(&input_buffer)
+			continuation = false
+
+			// Run any pending stream tasks
+			strm_loop()
+			worker_cleanup()
+		} else {
+			// Incomplete input - continue reading
+			continuation = true
+		}
+	}
+
+	fmt.println("Goodbye!")
+}
+
+// Try to parse and evaluate input
+// Returns (complete, result) where complete indicates if input was complete
+try_parse_and_eval :: proc(state: ^Strm_State, source: string, verbose: bool) -> (complete: bool, result: string) {
+	// Create lexer
+	lex: Lex
+	lex_init(&lex, source, "<repl>")
+
+	// Try parsing
+	p := parser_new()
+	defer parser_destroy(p)
+	parser_reset(p)
+
+	// Feed tokens to parser
+	for {
+		token := lex_scan_token(&lex)
+		parse_result := parser_push_token(p, token)
+
+		switch parse_result {
+		case .Done:
+			// Successfully parsed
+			ast := p.root
+			if ast == nil {
+				return true, ""
+			}
+			// NOTE: Don't free AST in REPL mode because lambdas hold references to AST nodes.
+			// This causes a small memory leak per REPL input, but it's acceptable for interactive use.
+			// The memory will be reclaimed when the process exits.
+
+			if verbose {
+				// Dump AST
+				fmt.println("=== AST ===")
+				dump_ast(ast, 0)
+				fmt.println("===========")
+			}
+
+			// Execute
+			ret: Strm_Value
+			exec_result := exec_expr(nil, state, ast, &ret)
+
+			if exec_result == .Error {
+				return true, "Error: Execution failed"
+			}
+
+			// Format result (skip nil for cleaner output)
+			if !strm_nil_p(ret) {
+				return true, strm_to_str(ret)
+			}
+			return true, ""
+
+		case .Error:
+			// Check if it's a real error or just incomplete
+			if p.error_msg != "" {
+				// Check for common "unexpected EOF" patterns that indicate incomplete input
+				if is_incomplete_error(p.error_msg) {
+					return false, ""
+				}
+				return true, fmt.tprintf("Parse error: %s", p.error_msg)
+			}
+			return true, "Parse error"
+
+		case .Ok, .Need_Token:
+			if token.type == .Eof {
+				// Reached EOF but parser still needs more - incomplete input
+				return false, ""
+			}
+			continue
+		}
+	}
+}
+
+// Check if parse error indicates incomplete input
+@(private = "file")
+is_incomplete_error :: proc(msg: string) -> bool {
+	// Common patterns for incomplete input
+	incomplete_patterns := []string{
+		"unexpected end",
+		"Expected '}'",
+		"Expected ')'",
+		"Expected ']'",
+	}
+
+	for pattern in incomplete_patterns {
+		if strings.contains(msg, pattern) {
+			return true
+		}
+	}
+	return false
 }

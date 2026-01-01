@@ -1,5 +1,7 @@
 package streem
 
+import "core:strings"
+
 // AST Node types for streem language
 // Reference: src/node.h
 
@@ -279,7 +281,8 @@ node_time_new :: proc(sec: i64, usec: i64, utc_offset: int, fname: string = "", 
 
 node_string_new :: proc(value: string, fname: string = "", lineno: int = 0) -> ^Node {
 	n := node_new(Node_Str, .Str, fname, lineno)
-	(&n.data.(Node_Str)).value = value
+	// Clone the string to avoid dangling references (important for REPL mode)
+	(&n.data.(Node_Str)).value = strings.clone(value)
 	return n
 }
 
@@ -299,14 +302,16 @@ node_nil_new :: proc(fname: string = "", lineno: int = 0) -> ^Node {
 
 node_ident_new :: proc(name: string, fname: string = "", lineno: int = 0) -> ^Node {
 	n := node_new(Node_Ident, .Ident, fname, lineno)
-	(&n.data.(Node_Ident)).name = name
+	// Clone the string to avoid dangling references (important for REPL mode)
+	(&n.data.(Node_Ident)).name = strings.clone(name)
 	return n
 }
 
 node_op_new :: proc(op: string, lhs: ^Node, rhs: ^Node, fname: string = "", lineno: int = 0) -> ^Node {
 	n := node_new(Node_Op, .Op, fname, lineno)
 	o := &n.data.(Node_Op)
-	o.op = op
+	// Clone the string to avoid dangling references (important for REPL mode)
+	o.op = strings.clone(op)
 	o.lhs = lhs
 	o.rhs = rhs
 	return n
@@ -342,7 +347,8 @@ node_block_new :: proc(body: ^Node, fname: string = "", lineno: int = 0) -> ^Nod
 node_call_new :: proc(name: string, args: ^Node, fname: string = "", lineno: int = 0) -> ^Node {
 	n := node_new(Node_Call, .Call, fname, lineno)
 	c := &n.data.(Node_Call)
-	c.name = name
+	// Clone the string to avoid dangling references (important for REPL mode)
+	c.name = strings.clone(name)
 	c.args = args
 	return n
 }
@@ -357,14 +363,16 @@ node_fcall_new :: proc(func_: ^Node, args: ^Node, fname: string = "", lineno: in
 
 node_genfunc_new :: proc(name: string, fname: string = "", lineno: int = 0) -> ^Node {
 	n := node_new(Node_Genfunc, .Genfunc, fname, lineno)
-	(&n.data.(Node_Genfunc)).name = name
+	// Clone the string to avoid dangling references (important for REPL mode)
+	(&n.data.(Node_Genfunc)).name = strings.clone(name)
 	return n
 }
 
 node_let_new :: proc(lhs: string, rhs: ^Node, fname: string = "", lineno: int = 0) -> ^Node {
 	n := node_new(Node_Let, .Let, fname, lineno)
 	l := &n.data.(Node_Let)
-	l.lhs = lhs
+	// Clone the string to avoid dangling references (important for REPL mode)
+	l.lhs = strings.clone(lhs)
 	l.rhs = rhs
 	return n
 }
@@ -392,14 +400,16 @@ node_return_new :: proc(value: ^Node, fname: string = "", lineno: int = 0) -> ^N
 node_ns_new :: proc(name: string, body: ^Node, fname: string = "", lineno: int = 0) -> ^Node {
 	n := node_new(Node_Ns, .Ns, fname, lineno)
 	ns := &n.data.(Node_Ns)
-	ns.name = name
+	// Clone the string to avoid dangling references (important for REPL mode)
+	ns.name = strings.clone(name)
 	ns.body = body
 	return n
 }
 
 node_import_new :: proc(name: string, fname: string = "", lineno: int = 0) -> ^Node {
 	n := node_new(Node_Import, .Import, fname, lineno)
-	(&n.data.(Node_Import)).name = name
+	// Clone the string to avoid dangling references (important for REPL mode)
+	(&n.data.(Node_Import)).name = strings.clone(name)
 	return n
 }
 
@@ -468,7 +478,8 @@ node_args_add :: proc(args: ^Node, name: string) {
 		return
 	}
 	a := &args.data.(Node_Args)
-	append(&a.names, name)
+	// Clone the string to avoid dangling references (important for REPL mode)
+	append(&a.names, strings.clone(name))
 }
 
 node_pair_new :: proc(key: string, value: ^Node, fname: string = "", lineno: int = 0) -> ^Node {

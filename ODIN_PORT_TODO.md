@@ -274,8 +274,10 @@ From parse.y (lowest to highest):
 - [x] Verbose/AST dump mode (`-v`)
 
 ### 7.2 REPL (optional)
-- [ ] Interactive parsing mode
-- [ ] Line continuation for incomplete input
+- [x] Interactive parsing mode
+- [x] Line continuation for incomplete input
+- [x] Persistent state across REPL evaluations
+- [x] User-defined functions working in REPL
 
 ---
 
