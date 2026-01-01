@@ -489,7 +489,20 @@ exec_nodes :: proc(strm: ^Strm_Stream, state: ^Strm_State, node: ^Node, ret: ^St
 // ============================================================================
 
 exec_lambda :: proc(strm: ^Strm_Stream, state: ^Strm_State, node: ^Node, ret: ^Strm_Value) -> Exec_Result {
-	// Create lambda closure value
+	data := &node.data.(Node_Lambda)
+
+	// Block without params: execute immediately
+	// This handles cases like: if (cond) { stmts }
+	if data.is_block && data.args == nil {
+		// Execute the body directly in the current scope
+		if data.body != nil {
+			return exec_expr(strm, state, data.body, ret)
+		}
+		ret^ = strm_nil_value()
+		return .Ok
+	}
+
+	// Create lambda closure value (for actual lambdas with params or non-blocks)
 	lambda := strm_lambda_new(node, state)
 	ret^ = strm_ptr_value(lambda)
 	return .Ok
