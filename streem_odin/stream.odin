@@ -203,8 +203,10 @@ value_to_src_stream :: proc(strm: ^Strm_Stream, val: Strm_Value) -> Strm_Value {
 
 	// IO -> read stream
 	if strm_io_p(val) {
-		// TODO: Phase 13 - strm_io_stream
-		// return strm_stream_value(strm_io_stream(val, STRM_IO_READ))
+		io_strm := strm_io_stream(val, STRM_IO_READ)
+		if io_strm != nil {
+			return strm_stream_value(io_strm)
+		}
 		return val
 	}
 
@@ -236,8 +238,10 @@ value_to_dst_stream :: proc(strm: ^Strm_Stream, val: Strm_Value) -> Strm_Value {
 
 	// IO -> write stream
 	if strm_io_p(val) {
-		// TODO: Phase 13 - strm_io_stream
-		// return strm_stream_value(strm_io_stream(val, STRM_IO_WRITE))
+		io_strm := strm_io_stream(val, STRM_IO_WRITE)
+		if io_strm != nil {
+			return strm_stream_value(io_strm)
+		}
 		return val
 	}
 

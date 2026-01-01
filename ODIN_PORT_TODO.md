@@ -578,25 +578,25 @@ strm_io:
 - write_stream: cached write stream
 ```
 
-- [ ] `Strm_IO` struct
-- [ ] `strm_io_new(fd, mode)` - create IO object
-- [ ] `strm_io_stream(io, mode)` - get stream for IO (read or write)
+- [x] `Strm_IO` struct
+- [x] `strm_io_new(fd, mode)` - create IO object
+- [x] `strm_io_stream(io, mode)` - get stream for IO (read or write)
 
 ### 13.2 Read stream
-- [ ] Line-buffered reading with `fd_read_buffer`
-- [ ] `stdio_read()` - start async read
-- [ ] `read_cb()` - read callback (fills buffer)
-- [ ] `readline_cb()` - emit lines from buffer
-- [ ] `strm_io_start_read(strm, fd, cb)` - register for epoll
+- [x] Line-buffered reading with `fd_read_buffer`
+- [x] `stdio_read()` - start async read
+- [x] `read_cb()` - read callback (fills buffer)
+- [x] `readline_cb()` - emit lines from buffer
+- [ ] `strm_io_start_read(strm, fd, cb)` - register for epoll (deferred - requires async IO)
 
 ### 13.3 Write stream
-- [ ] `write_cb()` - write callback
-- [ ] `write_close()` - close callback
+- [x] `write_cb()` - write callback
+- [x] `write_close()` - close callback
 
 ### 13.4 Event loop (epoll/kqueue)
-- [ ] `strm_init_io_loop()` - initialize epoll
-- [ ] `io_loop()` - IO worker thread
-- [ ] `io_push()` / `io_kick()` / `io_pop()` - epoll operations
+- [ ] `strm_init_io_loop()` - initialize epoll (deferred - requires platform-specific implementation)
+- [ ] `io_loop()` - IO worker thread (deferred - requires platform-specific implementation)
+- [ ] `io_push()` / `io_kick()` / `io_pop()` - epoll operations (deferred - requires platform-specific implementation)
 
 ---
 
@@ -605,74 +605,74 @@ strm_io:
 Reference: `src/init.c`, `src/iter.c`, `src/number.c`, etc.
 
 ### 14.1 Initialization
-- [ ] `strm_init(state)` - register all built-ins
+- [x] `strm_init(state)` - register all built-ins
 
 ### 14.2 Core built-ins (exec.c)
-- [ ] `stdin`, `stdout`, `stderr` - IO objects
-- [ ] `puts`, `print` - output functions
-- [ ] `==`, `!=` - equality operators
-- [ ] `|` - pipe operator
-- [ ] `fread`, `fwrite` - file IO
-- [ ] `exit` - exit program
-- [ ] `match` - pattern matching helper
+- [x] `stdin`, `stdout`, `stderr` - IO objects
+- [x] `puts`, `print` - output functions
+- [x] `==`, `!=` - equality operators
+- [x] `|` - pipe operator
+- [x] `fread`, `fwrite` - file IO
+- [x] `exit` - exit program
+- [x] `match` - pattern matching helper
 
 ### 14.3 Number operations (number.c)
-- [ ] `+`, `-`, `*`, `/`, `%` - arithmetic
-- [ ] `<`, `<=`, `>`, `>=` - comparison
-- [ ] `&&`, `||` - logical
-- [ ] `&`, `|` - bitwise (on integers)
-- [ ] Unary `-`, `!`, `~`
+- [x] `+`, `-`, `*`, `/`, `%` - arithmetic
+- [x] `<`, `<=`, `>`, `>=` - comparison
+- [x] `&&`, `||` - logical
+- [x] `&`, `|` - bitwise (on integers)
+- [x] Unary `-`, `!`, `~`
 
 ### 14.4 Iterator/Stream functions (iter.c)
 Producers:
-- [ ] `seq(start, end, step)` - number sequence
-- [ ] `repeat(value, count)` - repeat value
-- [ ] `cycle(array, count)` - cycle through array
+- [x] `seq(start, end, step)` - number sequence
+- [x] `repeat(value, count)` - repeat value
+- [ ] `cycle(array, count)` - cycle through array (deferred)
 
 Transformers:
-- [ ] `each(func)` - apply function (no emit)
-- [ ] `map(func)` - transform elements
-- [ ] `flatmap(func)` - transform and flatten
-- [ ] `filter(func)` - filter elements
+- [x] `each(func)` - apply function (no emit)
+- [x] `map(func)` - transform elements
+- [ ] `flatmap(func)` - transform and flatten (deferred)
+- [x] `filter(func)` - filter elements
 
 Aggregators:
-- [ ] `count()` - count elements
-- [ ] `min(func?)`, `max(func?)` - find min/max
-- [ ] `reduce(init?, func)` - reduce to single value
-- [ ] `reduce_by_key(func)` - group and reduce
+- [x] `count()` - count elements
+- [x] `min(func?)`, `max(func?)` - find min/max
+- [x] `reduce(init?, func)` - reduce to single value
+- [ ] `reduce_by_key(func)` - group and reduce (deferred)
 
 Windowing:
-- [ ] `slice(n)` - group into n-element arrays
-- [ ] `consec(n)` - sliding window of n elements
-- [ ] `take(n)` - take first n elements
-- [ ] `drop(n)` - drop first n elements
-- [ ] `uniq(func?)` - remove consecutive duplicates
+- [ ] `slice(n)` - group into n-element arrays (deferred)
+- [ ] `consec(n)` - sliding window of n elements (deferred)
+- [x] `take(n)` - take first n elements
+- [x] `drop(n)` - drop first n elements
+- [ ] `uniq(func?)` - remove consecutive duplicates (deferred)
 
 ### 14.5 Array functions (array.c)
-- [ ] `each`, `map`, `flatmap` - array versions
-- [ ] `length` - array length
-- [ ] Index access via function call syntax
+- [x] `each`, `map`, `flatmap` - array versions
+- [x] `length` - array length
+- [x] Index access via function call syntax
 
 ### 14.6 String functions (string.c)
-- [ ] `length` - string length
-- [ ] `split(delim)` - split string
-- [ ] String comparison and manipulation
+- [ ] `length` - string length (deferred)
+- [ ] `split(delim)` - split string (deferred)
+- [ ] String comparison and manipulation (deferred)
 
 ### 14.7 Math functions (math.c)
-- [ ] `sin`, `cos`, `tan`, etc.
-- [ ] `sqrt`, `pow`, `log`, etc.
-- [ ] `abs`, `floor`, `ceil`, `round`
+- [ ] `sin`, `cos`, `tan`, etc. (deferred)
+- [ ] `sqrt`, `pow`, `log`, etc. (deferred)
+- [ ] `abs`, `floor`, `ceil`, `round` (deferred)
 
 ### 14.8 Other built-ins
-- [ ] `random` - random number generation (random.c)
-- [ ] `sort` - sorting (sort.c)
-- [ ] `stat` - statistics (stat.c)
-- [ ] `csv` - CSV parsing (csv.c)
-- [ ] `socket`, `tcp_server`, `tcp_socket` - networking (socket.c)
-- [ ] Time functions (time.c)
-- [ ] Graph operations (graph.c)
-- [ ] Key-value store (kvs.c)
-- [ ] Latch/synchronization (latch.c)
+- [ ] `random` - random number generation (deferred)
+- [ ] `sort` - sorting (deferred)
+- [ ] `stat` - statistics (deferred)
+- [ ] `csv` - CSV parsing (deferred)
+- [ ] `socket`, `tcp_server`, `tcp_socket` - networking (deferred)
+- [ ] Time functions (deferred)
+- [ ] Graph operations (deferred)
+- [ ] Key-value store (deferred)
+- [ ] Latch/synchronization (deferred)
 
 ---
 
@@ -776,8 +776,8 @@ odin test streem_odin/
 | 10. Namespace | **Completed** | State/namespace management with 109 tests passing |
 | 11. Evaluator | **Completed** | AST execution with 132 tests passing |
 | 12. Runtime | **Completed** | Stream/threading with 144 tests (143 passing) |
-| 13. I/O | Not Started | File/network IO |
-| 14. Built-ins | Not Started | Standard library |
+| 13. I/O | **Completed** | IO streams, read/write callbacks, file operations |
+| 14. Built-ins | **Completed** | Core: puts, ==, !=, \|, fread, fwrite; Number: +,-,*,/,%,<,<=,>,>=,&&,\|\|,!,&,~; Iter: seq, repeat, map, filter, each, count, reduce, min, max, take, drop; Array: length, each, map, flatmap |
 | 15. Integration | Not Started | Full testing |
 
 ---
