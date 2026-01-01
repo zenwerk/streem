@@ -141,13 +141,36 @@ strm_queue_new :: proc() -> ^Strm_Queue {
 	return q
 }
 
-// Destroy a queue
+// Destroy a queue (only frees queue structure and nodes, not node values)
+// This is the safe version that doesn't assume what type the values are
 strm_queue_destroy :: proc(q: ^Strm_Queue) {
 	if q == nil {
 		return
 	}
 
-	// Free all remaining nodes
+	// Free all remaining nodes (but not the values - they are managed elsewhere)
+	node := q.head
+	for node != nil {
+		next := node.next
+		// Note: We don't free node.value here because:
+		// - For global queues (prod_queue, work_queue), values are ^Strm_Stream which are freed elsewhere
+		// - For stream queues (strm.queue), values are ^Strm_Task
+		// The caller should drain the queue before destroying it if needed
+		free(node)
+		node = next
+	}
+
+	free(q)
+}
+
+// Destroy a task queue (for stream's per-stream queue)
+// This version frees remaining tasks
+strm_task_queue_destroy :: proc(q: ^Strm_Queue) {
+	if q == nil {
+		return
+	}
+
+	// Free all remaining nodes and their task values
 	node := q.head
 	for node != nil {
 		next := node.next

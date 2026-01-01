@@ -169,7 +169,7 @@ strm_stream_destroy :: proc(strm: ^Strm_Stream) {
 	delete(strm.rest)
 
 	// Destroy task queue and all pending tasks
-	strm_queue_destroy(strm.queue)
+	strm_task_queue_destroy(strm.queue)
 
 	// Free exception if present
 	if strm.exc != nil {
