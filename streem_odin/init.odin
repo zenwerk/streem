@@ -15,9 +15,11 @@ strm_init :: proc(state: ^Strm_State) {
 	// Iterator/Stream functions (seq, map, filter, reduce, etc.)
 	strm_iter_init(state)
 
+	// String functions (split, concat, substr, trim, etc.)
+	strm_string_init(state)
+
 	// Core functions (stdin, stdout, puts, ==, !=, |, fread, fwrite, exit, match)
 	strm_misc_init(state)
 
 	// Array functions are registered in strm_iter_init via strm_ns_array
-	// String functions would be added here when implemented
 }

@@ -629,26 +629,26 @@ Reference: `src/init.c`, `src/iter.c`, `src/number.c`, etc.
 Producers:
 - [x] `seq(start, end, step)` - number sequence
 - [x] `repeat(value, count)` - repeat value
-- [ ] `cycle(array, count)` - cycle through array (deferred)
+- [x] `cycle(array, count)` - cycle through array
 
 Transformers:
 - [x] `each(func)` - apply function (no emit)
 - [x] `map(func)` - transform elements
-- [ ] `flatmap(func)` - transform and flatten (deferred)
+- [x] `flatmap(func)` - transform and flatten
 - [x] `filter(func)` - filter elements
 
 Aggregators:
 - [x] `count()` - count elements
 - [x] `min(func?)`, `max(func?)` - find min/max
 - [x] `reduce(init?, func)` - reduce to single value
-- [ ] `reduce_by_key(func)` - group and reduce (deferred)
+- [ ] `reduce_by_key(func)` - group and reduce (deferred - requires hash map)
 
 Windowing:
-- [ ] `slice(n)` - group into n-element arrays (deferred)
-- [ ] `consec(n)` - sliding window of n elements (deferred)
+- [x] `slice(n)` - group into n-element arrays
+- [x] `consec(n)` - sliding window of n elements
 - [x] `take(n)` - take first n elements
 - [x] `drop(n)` - drop first n elements
-- [ ] `uniq(func?)` - remove consecutive duplicates (deferred)
+- [x] `uniq(func?)` - remove consecutive duplicates
 
 ### 14.5 Array functions (array.c)
 - [x] `each`, `map`, `flatmap` - array versions
@@ -656,9 +656,15 @@ Windowing:
 - [x] Index access via function call syntax
 
 ### 14.6 String functions (string.c)
-- [ ] `length` - string length (deferred)
-- [ ] `split(delim)` - split string (deferred)
-- [ ] String comparison and manipulation (deferred)
+- [x] `length` - string length
+- [x] `split(delim)` - split string
+- [x] `concat(str1, str2, ...)` - concatenate strings
+- [x] `substr(str, start, length?)` - substring
+- [x] `trim(str)` - trim whitespace
+- [x] `upper(str)` / `lower(str)` - case conversion
+- [x] `contains(str, substr)` - substring check
+- [x] `index(str, substr)` - find substring position
+- [x] `replace(str, old, new)` - replace all occurrences
 
 ### 14.7 Math functions (math.c)
 - [ ] `sin`, `cos`, `tan`, etc. (deferred)

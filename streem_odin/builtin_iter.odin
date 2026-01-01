@@ -505,6 +505,335 @@ exec_max :: proc(strm: ^Strm_Stream, argc: int, args: []Strm_Value, ret: ^Strm_V
 }
 
 // ============================================================================
+// Flatmap - Transform and flatten elements
+// ============================================================================
+
+@(private = "file")
+iter_flatmap :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
+	d := cast(^Map_Data)strm.data
+	val: Strm_Value
+
+	args := []Strm_Value{data}
+	if strm_funcall(strm, nil, d.func_, args, &val) != .Ok {
+		return STRM_NG
+	}
+
+	// If result is an array, emit each element
+	if strm_array_p(val) {
+		ary := Strm_Array(val)
+		ptr := strm_ary_ptr(ary)
+		for i in 0 ..< strm_ary_len(ary) {
+			strm_emit(strm, ptr[i], nil)
+		}
+	} else {
+		// Non-array results are emitted as-is
+		strm_emit(strm, val, nil)
+	}
+	return STRM_OK
+}
+
+// flatmap(func) - transform each element and flatten arrays
+exec_flatmap :: proc(strm: ^Strm_Stream, argc: int, args: []Strm_Value, ret: ^Strm_Value) -> int {
+	if argc != 1 {
+		return STRM_NG
+	}
+
+	d := new(Map_Data)
+	d.func_ = args[0]
+
+	ret^ = strm_stream_value(strm_stream_new(.Filter, iter_flatmap, nil, rawptr(d)))
+	return STRM_OK
+}
+
+// Array version of flatmap
+ary_flatmap :: proc(strm: ^Strm_Stream, argc: int, args: []Strm_Value, ret: ^Strm_Value) -> int {
+	if argc != 2 {
+		return STRM_NG
+	}
+
+	if !strm_array_p(args[0]) {
+		return STRM_NG
+	}
+
+	ary := Strm_Array(args[0])
+	func_ := args[1]
+
+	len := int(strm_ary_len(ary))
+	ptr := strm_ary_ptr(ary)
+
+	result: [dynamic]Strm_Value
+	defer delete(result)
+
+	for i in 0 ..< len {
+		a := []Strm_Value{ptr[i]}
+		val: Strm_Value
+		if strm_funcall(strm, nil, func_, a, &val) != .Ok {
+			return STRM_NG
+		}
+		// If result is an array, append each element
+		if strm_array_p(val) {
+			sub_ary := Strm_Array(val)
+			sub_ptr := strm_ary_ptr(sub_ary)
+			for j in 0 ..< strm_ary_len(sub_ary) {
+				append(&result, sub_ptr[j])
+			}
+		} else {
+			append(&result, val)
+		}
+	}
+
+	ret^ = strm_ary_value(strm_ary_new(result[:]))
+	return STRM_OK
+}
+
+// ============================================================================
+// Cycle - Cycle through array
+// ============================================================================
+
+Cycle_Data :: struct {
+	ary:    Strm_Array,
+	idx:    int,
+	count:  int, // -1 for infinite
+	cycles: int, // current cycle count
+}
+
+@(private = "file")
+gen_cycle :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
+	d := cast(^Cycle_Data)strm.data
+	ary_len := int(strm_ary_len(d.ary))
+
+	if ary_len == 0 {
+		strm_stream_close(strm)
+		return STRM_OK
+	}
+
+	ptr := strm_ary_ptr(d.ary)
+	strm_emit(strm, ptr[d.idx], gen_cycle)
+
+	d.idx += 1
+	if d.idx >= ary_len {
+		d.idx = 0
+		d.cycles += 1
+		if d.count > 0 && d.cycles >= d.count {
+			strm_stream_close(strm)
+		}
+	}
+	return STRM_OK
+}
+
+// cycle(array) - cycle infinitely
+// cycle(array, count) - cycle count times
+exec_cycle :: proc(strm: ^Strm_Stream, argc: int, args: []Strm_Value, ret: ^Strm_Value) -> int {
+	if argc < 1 || argc > 2 {
+		return STRM_NG
+	}
+
+	if !strm_array_p(args[0]) {
+		strm_raise(strm, "cycle requires an array")
+		return STRM_NG
+	}
+
+	count := -1
+	if argc == 2 {
+		if !strm_int_p(args[1]) {
+			return STRM_NG
+		}
+		count = int(strm_value_int(args[1]))
+		if count <= 0 {
+			strm_raise(strm, "invalid count number")
+			return STRM_NG
+		}
+	}
+
+	d := new(Cycle_Data)
+	d.ary = Strm_Array(args[0])
+	d.idx = 0
+	d.count = count
+	d.cycles = 0
+
+	ret^ = strm_stream_value(strm_stream_new(.Producer, gen_cycle, nil, rawptr(d)))
+	return STRM_OK
+}
+
+// ============================================================================
+// Slice - Group into n-element arrays
+// ============================================================================
+
+Slice_Data :: struct {
+	n:      int,
+	buffer: [dynamic]Strm_Value,
+}
+
+@(private = "file")
+iter_slice :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
+	d := cast(^Slice_Data)strm.data
+
+	append(&d.buffer, data)
+
+	if len(d.buffer) >= d.n {
+		ary := strm_ary_new(d.buffer[:])
+		strm_emit(strm, strm_ary_value(ary), nil)
+		clear(&d.buffer)
+	}
+	return STRM_OK
+}
+
+@(private = "file")
+slice_finish :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
+	d := cast(^Slice_Data)strm.data
+
+	// Emit remaining elements if any
+	if len(d.buffer) > 0 {
+		ary := strm_ary_new(d.buffer[:])
+		strm_emit(strm, strm_ary_value(ary), nil)
+	}
+
+	delete(d.buffer)
+	free(d)
+	return STRM_OK
+}
+
+// slice(n) - group into n-element arrays
+exec_slice :: proc(strm: ^Strm_Stream, argc: int, args: []Strm_Value, ret: ^Strm_Value) -> int {
+	if argc != 1 || !strm_int_p(args[0]) {
+		return STRM_NG
+	}
+
+	n := int(strm_value_int(args[0]))
+	if n <= 0 {
+		strm_raise(strm, "invalid slice size")
+		return STRM_NG
+	}
+
+	d := new(Slice_Data)
+	d.n = n
+	d.buffer = make([dynamic]Strm_Value)
+
+	ret^ = strm_stream_value(strm_stream_new(.Filter, iter_slice, slice_finish, rawptr(d)))
+	return STRM_OK
+}
+
+// ============================================================================
+// Consec - Sliding window of n elements
+// ============================================================================
+
+Consec_Data :: struct {
+	n:      int,
+	buffer: [dynamic]Strm_Value,
+	full:   bool,
+}
+
+@(private = "file")
+iter_consec :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
+	d := cast(^Consec_Data)strm.data
+
+	append(&d.buffer, data)
+
+	if len(d.buffer) >= d.n {
+		d.full = true
+	}
+
+	if d.full {
+		// Emit the window
+		ary := strm_ary_new(d.buffer[:])
+		strm_emit(strm, strm_ary_value(ary), nil)
+		// Slide the window - remove first element
+		ordered_remove(&d.buffer, 0)
+	}
+	return STRM_OK
+}
+
+@(private = "file")
+consec_finish :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
+	d := cast(^Consec_Data)strm.data
+	delete(d.buffer)
+	free(d)
+	return STRM_OK
+}
+
+// consec(n) - sliding window of n elements
+exec_consec :: proc(strm: ^Strm_Stream, argc: int, args: []Strm_Value, ret: ^Strm_Value) -> int {
+	if argc != 1 || !strm_int_p(args[0]) {
+		return STRM_NG
+	}
+
+	n := int(strm_value_int(args[0]))
+	if n <= 0 {
+		strm_raise(strm, "invalid window size")
+		return STRM_NG
+	}
+
+	d := new(Consec_Data)
+	d.n = n
+	d.buffer = make([dynamic]Strm_Value)
+	d.full = false
+
+	ret^ = strm_stream_value(strm_stream_new(.Filter, iter_consec, consec_finish, rawptr(d)))
+	return STRM_OK
+}
+
+// ============================================================================
+// Uniq - Remove consecutive duplicates
+// ============================================================================
+
+Uniq_Data :: struct {
+	first: bool,
+	prev:  Strm_Value,
+	func_: Strm_Value, // Optional key function
+}
+
+@(private = "file")
+iter_uniq :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
+	d := cast(^Uniq_Data)strm.data
+
+	key := data
+	// Apply key function if provided
+	if !strm_nil_p(d.func_) {
+		args := []Strm_Value{data}
+		if strm_funcall(strm, nil, d.func_, args, &key) != .Ok {
+			return STRM_NG
+		}
+	}
+
+	if d.first {
+		d.first = false
+		d.prev = key
+		strm_emit(strm, data, nil)
+		return STRM_OK
+	}
+
+	// Compare with previous key
+	if !strm_value_eq(key, d.prev) {
+		d.prev = key
+		strm_emit(strm, data, nil)
+	}
+	return STRM_OK
+}
+
+@(private = "file")
+uniq_finish :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
+	d := cast(^Uniq_Data)strm.data
+	free(d)
+	return STRM_OK
+}
+
+// uniq() - remove consecutive duplicates
+// uniq(func) - remove consecutive duplicates by key function
+exec_uniq :: proc(strm: ^Strm_Stream, argc: int, args: []Strm_Value, ret: ^Strm_Value) -> int {
+	if argc > 1 {
+		return STRM_NG
+	}
+
+	d := new(Uniq_Data)
+	d.first = true
+	d.prev = strm_nil_value()
+	d.func_ = argc > 0 ? args[0] : strm_nil_value()
+
+	ret^ = strm_stream_value(strm_stream_new(.Filter, iter_uniq, uniq_finish, rawptr(d)))
+	return STRM_OK
+}
+
+// ============================================================================
 // Iterator initialization
 // ============================================================================
 
@@ -512,11 +841,13 @@ strm_iter_init :: proc(state: ^Strm_State) {
 	// Producers
 	strm_var_def(state, strm_str_intern("seq"), strm_cfunc_value(exec_seq))
 	strm_var_def(state, strm_str_intern("repeat"), strm_cfunc_value(exec_repeat))
+	strm_var_def(state, strm_str_intern("cycle"), strm_cfunc_value(exec_cycle))
 
 	// Transformers
 	strm_var_def(state, strm_str_intern("each"), strm_cfunc_value(exec_each))
 	strm_var_def(state, strm_str_intern("map"), strm_cfunc_value(exec_map))
 	strm_var_def(state, strm_str_intern("filter"), strm_cfunc_value(exec_filter))
+	strm_var_def(state, strm_str_intern("flatmap"), strm_cfunc_value(exec_flatmap))
 
 	// Aggregators
 	strm_var_def(state, strm_str_intern("count"), strm_cfunc_value(exec_count))
@@ -527,7 +858,11 @@ strm_iter_init :: proc(state: ^Strm_State) {
 	// Windowing
 	strm_var_def(state, strm_str_intern("take"), strm_cfunc_value(exec_take))
 	strm_var_def(state, strm_str_intern("drop"), strm_cfunc_value(exec_drop))
+	strm_var_def(state, strm_str_intern("slice"), strm_cfunc_value(exec_slice))
+	strm_var_def(state, strm_str_intern("consec"), strm_cfunc_value(exec_consec))
+	strm_var_def(state, strm_str_intern("uniq"), strm_cfunc_value(exec_uniq))
 
 	// Array methods
 	strm_var_def(strm_ns_array, strm_str_intern("map"), strm_cfunc_value(ary_map))
+	strm_var_def(strm_ns_array, strm_str_intern("flatmap"), strm_cfunc_value(ary_flatmap))
 }
