@@ -153,16 +153,31 @@ strm_stream_close :: proc(strm: ^Strm_Stream) {
 }
 
 // Destroy stream (immediate cleanup without propagation)
+// This performs full resource cleanup
 strm_stream_destroy :: proc(strm: ^Strm_Stream) {
 	if strm == nil {
 		return
 	}
 
+	// Free user data if present and no close callback handled it
+	if strm.data != nil {
+		free(strm.data)
+		strm.data = nil
+	}
+
+	// Free rest connections array
 	delete(strm.rest)
+
+	// Destroy task queue and all pending tasks
 	strm_queue_destroy(strm.queue)
+
+	// Free exception if present
 	if strm.exc != nil {
 		free(strm.exc)
+		strm.exc = nil
 	}
+
+	// Free stream structure
 	free(strm)
 }
 
@@ -444,6 +459,77 @@ strm_eprint :: proc(strm: ^Strm_Stream) {
 
 	// Clear exception after printing
 	strm_clear_exc(strm)
+}
+
+// ============================================================================
+// Error propagation
+// Reference: src/core.c
+// ============================================================================
+
+// Propagate error to downstream streams
+// When an error occurs, we need to signal downstream streams to stop
+strm_propagate_error :: proc(strm: ^Strm_Stream, msg: string) {
+	if strm == nil {
+		return
+	}
+
+	// Set error on current stream
+	strm_raise(strm, msg)
+	strm_eprint(strm)
+
+	// Mark stream as dying
+	strm.mode = .Dying
+
+	// Propagate close to downstream to trigger cleanup
+	if strm.dst != nil {
+		strm_task_push(strm.dst, stream_close_cb, strm_nil_value())
+	}
+	for dst in strm.rest {
+		strm_task_push(dst, stream_close_cb, strm_nil_value())
+	}
+}
+
+// ============================================================================
+// Stream cancellation
+// Reference: src/core.c
+// ============================================================================
+
+// Cancel a stream and all its downstream connections
+// This is a forceful cancellation that immediately marks streams as killed
+strm_cancel :: proc(strm: ^Strm_Stream) {
+	if strm == nil {
+		return
+	}
+
+	// Already cancelled or killed
+	if strm.mode == .Killed || strm.mode == .Dying {
+		return
+	}
+
+	// Mark as dying first
+	strm.mode = .Dying
+
+	// Cancel downstream streams recursively
+	if strm.dst != nil {
+		strm_cancel(strm.dst)
+	}
+	for dst in strm.rest {
+		strm_cancel(dst)
+	}
+
+	// Now close this stream
+	strm_stream_close(strm)
+}
+
+// Cancel upstream - signal upstream to stop producing
+// This is used when a consumer wants to stop early (e.g., take(n))
+strm_cancel_upstream :: proc(strm: ^Strm_Stream) {
+	if strm == nil {
+		return
+	}
+
+	// Set mode to dying to signal we don't want more data
+	strm.mode = .Dying
 }
 
 // ============================================================================

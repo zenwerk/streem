@@ -691,9 +691,9 @@ Windowing:
 - [ ] Thread scaling (deferred)
 
 ### 15.3 Edge cases
-- [ ] Error propagation (deferred)
-- [ ] Stream cancellation (deferred)
-- [ ] Resource cleanup (deferred)
+- [x] Error propagation - `strm_propagate_error` implemented
+- [x] Stream cancellation - `strm_cancel`, `strm_cancel_upstream` implemented
+- [x] Resource cleanup - `strm_stream_destroy` enhanced, 12 new edge case tests added
 
 ### 15.4 Known Issues (discovered during testing)
 All known parser issues have been resolved:

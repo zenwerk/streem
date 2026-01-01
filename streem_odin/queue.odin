@@ -276,8 +276,14 @@ task_exec :: proc(strm: ^Strm_Stream, task: ^Strm_Task) {
 	if func_ != nil {
 		result := func_(strm, data)
 		if result != STRM_OK {
-			// Error occurred
-			// TODO: strm_eprint(strm) if verbose
+			// Error occurred - propagate error
+			if strm.exc != nil {
+				strm_eprint(strm)
+			}
+			// Mark stream as dying to trigger cleanup
+			if strm.mode != .Killed {
+				strm.mode = .Dying
+			}
 		}
 	}
 
