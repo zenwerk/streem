@@ -1,7 +1,9 @@
 package streem
 
+import "core:hash"
 import "core:mem"
 import "core:strings"
+import "core:sync"
 
 // String type - NaN-boxed 64-bit value with string-specific tags
 // Reference: src/strm.h, src/string.c
@@ -23,6 +25,55 @@ Strm_String_Struct :: struct {
 
 // Null string value
 STRM_STR_NULL :: Strm_String(0)
+
+// ============================================================================
+// String interning table
+// ============================================================================
+
+// Intern table entry
+@(private)
+Intern_Entry :: struct {
+	str:  Strm_String,  // The interned string value
+	hash: u64,          // Cached hash for quick comparison
+}
+
+// Global intern table for long strings (>6 bytes)
+// Uses FNV-1a hash for string hashing
+@(private)
+intern_table: map[u64]Intern_Entry
+
+// Mutex for thread-safe access to intern table
+@(private)
+intern_mutex: sync.Mutex
+
+// Initialize intern table
+strm_intern_init :: proc() {
+	sync.mutex_lock(&intern_mutex)
+	defer sync.mutex_unlock(&intern_mutex)
+
+	if intern_table == nil {
+		intern_table = make(map[u64]Intern_Entry)
+	}
+}
+
+// Cleanup intern table
+strm_intern_cleanup :: proc() {
+	sync.mutex_lock(&intern_mutex)
+	defer sync.mutex_unlock(&intern_mutex)
+
+	// Free all interned strings
+	for _, entry in intern_table {
+		strm_str_free(entry.str)
+	}
+	delete(intern_table)
+	intern_table = nil
+}
+
+// Get hash for a string using FNV-1a
+@(private)
+str_hash :: proc(s: string) -> u64 {
+	return hash.fnv64a(transmute([]u8)s)
+}
 
 // ============================================================================
 // String creation
@@ -99,16 +150,41 @@ str_new_internal :: proc(s: string, is_static: bool, allocator := context.alloca
 }
 
 // Create/get interned string
-// For short strings (≤6 bytes), always inline
-// For longer strings, store in intern table (simplified: just create new for now)
+// For short strings (≤6 bytes), always inline (no allocation needed)
+// For longer strings, use hash table for deduplication
 strm_str_intern :: proc(s: string, allocator := context.allocator) -> Strm_String {
-	// Simplified implementation: for short strings, always inline
-	// For longer strings, create as static (interned strings are typically not freed)
+	// Short strings are always inlined - no need for intern table
 	if len(s) <= 6 {
 		return str_new_internal(s, false, allocator)
 	}
-	// TODO: Implement proper interning with hash table for deduplication
-	return str_new_internal(s, true, allocator)
+
+	// For longer strings, use intern table
+	h := str_hash(s)
+
+	sync.mutex_lock(&intern_mutex)
+	defer sync.mutex_unlock(&intern_mutex)
+
+	// Initialize table if needed
+	if intern_table == nil {
+		intern_table = make(map[u64]Intern_Entry)
+	}
+
+	// Check if already interned
+	if entry, ok := intern_table[h]; ok {
+		// Verify it's the same string (hash collision check)
+		entry_copy := entry.str
+		if strm_str_ptr(&entry_copy) == s {
+			return entry.str
+		}
+		// Hash collision - need to handle (for now, just create new)
+		// In practice, FNV-1a collisions are rare for short strings
+	}
+
+	// Create new interned string (as static/foreign - won't be freed individually)
+	new_str := str_new_internal(s, true, allocator)
+	intern_table[h] = Intern_Entry{str = new_str, hash = h}
+
+	return new_str
 }
 
 // Check if string is interned (short or foreign)

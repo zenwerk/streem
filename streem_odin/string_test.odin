@@ -171,3 +171,34 @@ test_str_value_eq :: proc(t: ^testing.T) {
 	testing.expect(t, strm_value_eq(v1, v2), "Expected equal string values to be equal")
 	testing.expect(t, !strm_value_eq(v1, v3), "Expected different string values to not be equal")
 }
+
+@(test)
+test_str_intern_dedup :: proc(t: ^testing.T) {
+	// Initialize intern table
+	strm_intern_init()
+	defer strm_intern_cleanup()
+
+	// Test short string interning (<=6 bytes) - always inlined, same bit pattern
+	s1 := strm_str_intern("short")
+	s2 := strm_str_intern("short")
+	testing.expect(t, u64(s1) == u64(s2), "Expected short interned strings to have same bits")
+
+	// Test 6-byte string interning - same bit pattern
+	s3 := strm_str_intern("sixchr")
+	s4 := strm_str_intern("sixchr")
+	testing.expect(t, u64(s3) == u64(s4), "Expected 6-byte interned strings to have same bits")
+
+	// Test long string interning (>6 bytes) - should deduplicate via hash table
+	long_str := "this_is_a_long_string_for_interning"
+	s5 := strm_str_intern(long_str)
+	s6 := strm_str_intern(long_str)
+	testing.expect(t, u64(s5) == u64(s6), "Expected long interned strings to be deduplicated")
+
+	// Different long strings should have different values
+	s7 := strm_str_intern("another_long_string_different")
+	testing.expect(t, u64(s5) != u64(s7), "Expected different long strings to be different")
+
+	// Verify content is correct
+	s5_copy := s5
+	testing.expect(t, strm_str_ptr(&s5_copy) == long_str, "Expected interned string content to match")
+}

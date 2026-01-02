@@ -314,6 +314,9 @@ strm_ns_number: ^Strm_State = nil
 
 // Initialize built-in namespaces
 strm_ns_init :: proc() {
+	// Initialize string intern table first
+	strm_intern_init()
+
 	ensure_registry_init()
 
 	// Create Array namespace (or get existing)
@@ -363,6 +366,9 @@ strm_ns_cleanup :: proc() {
 	strm_ns_array = nil
 	strm_ns_string = nil
 	strm_ns_number = nil
+
+	// Cleanup string intern table
+	strm_intern_cleanup()
 }
 
 // ============================================================================
