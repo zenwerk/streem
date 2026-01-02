@@ -1,12 +1,12 @@
 package streem
 
-import "core:fmt"
-import "core:os"
-import "core:strings"
 import "core:bufio"
+import "core:io"
+import "core:os"
 
 // I/O Streams
 // Reference: src/io.c
+// Refactored to use core:bufio for line-buffered reading
 
 // IO mode flags
 IO_Mode :: enum {
@@ -57,100 +57,61 @@ strm_value_io :: proc(v: Strm_Value) -> ^Strm_IO {
 }
 
 // ============================================================================
-// Read Buffer
+// Read Stream (using core:bufio)
 // ============================================================================
 
-// Read buffer structure for line-buffered reading
-FD_Read_Buffer :: struct {
-	fd:   os.Handle,
-	io:   ^Strm_IO,
-	buf:  [4096]byte,        // Buffer (BUFSIZ equivalent)
-	beg:  int,               // Start position in buffer
-	end_: int,               // End position in buffer
+// Read data structure using bufio.Scanner
+Read_Data :: struct {
+	fd:           os.Handle,
+	io_obj:       ^Strm_IO,
+	scanner:      bufio.Scanner,
+	stream:       io.Stream,
 }
 
-// ============================================================================
-// Read Stream
-// ============================================================================
-
-// Read callback - reads data from fd into buffer
+// Read callback - reads lines using bufio.Scanner
 @(private = "file")
 read_cb :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
-	b := cast(^FD_Read_Buffer)strm.data
+	rd := cast(^Read_Data)strm.data
 
-	// Calculate available space
-	count := len(b.buf) - b.end_
-	if count <= 0 {
-		// Buffer full, need to process
-		return readline_cb(strm, strm_nil_value())
+	// Scan next line
+	if bufio.scanner_scan(&rd.scanner) {
+		line := bufio.scanner_text(&rd.scanner)
+		// Clone the line since scanner reuses its buffer
+		s := strm_str_new(line)
+		strm_emit(strm, strm_str_value(s), read_cb)
+		return STRM_OK
 	}
 
-	// Read from fd
-	n, err := os.read(b.fd, b.buf[b.end_:])
-	if err != nil || n <= 0 {
-		// EOF or error
-		if b.beg < b.end_ {
-			// Emit remaining data
-			s := strm_str_new(string(b.buf[b.beg:b.end_]))
-			b.beg = 0
-			b.end_ = 0
-			strm_emit(strm, strm_str_value(s), nil)
-		}
+	// Check for errors
+	if rd.scanner._err != nil {
+		// I/O error occurred
 		strm_stream_close(strm)
 		return STRM_OK
 	}
 
-	b.end_ += n
-	return readline_cb(strm, strm_nil_value())
-}
-
-// Readline callback - emits lines from buffer
-@(private = "file")
-readline_cb :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
-	b := cast(^FD_Read_Buffer)strm.data
-
-	// Find newline
-	for i in b.beg ..< b.end_ {
-		if b.buf[i] == '\n' {
-			// Found newline, emit line
-			line_len := i - b.beg
-			s := strm_str_new(string(b.buf[b.beg:b.beg + line_len]))
-			b.beg = i + 1
-			strm_emit(strm, strm_str_value(s), readline_cb)
-			return STRM_OK
-		}
-	}
-
-	// No newline found
-	if b.beg > 0 && b.end_ > b.beg {
-		// Move remaining data to beginning
-		copy(b.buf[:], b.buf[b.beg:b.end_])
-		b.end_ -= b.beg
-		b.beg = 0
-	}
-
-	// Schedule next read
-	strm_task_push(strm, read_cb, strm_nil_value())
+	// EOF reached
+	strm_stream_close(strm)
 	return STRM_OK
 }
 
 // Start reading from fd
 @(private = "file")
 stdio_read :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
-	// Start reading
 	return read_cb(strm, strm_nil_value())
 }
 
 // Close read stream
 @(private = "file")
 read_close :: proc(strm: ^Strm_Stream, data: Strm_Value) -> int {
-	b := cast(^FD_Read_Buffer)strm.data
-	if b != nil {
+	rd := cast(^Read_Data)strm.data
+	if rd != nil {
+		// Destroy scanner
+		bufio.scanner_destroy(&rd.scanner)
 		// Close fd if not stdin
-		if b.fd != os.stdin {
-			os.close(b.fd)
+		if rd.fd != os.stdin {
+			os.close(rd.fd)
 		}
-		free(b)
+		free(rd)
 	}
 	return STRM_OK
 }
@@ -162,18 +123,18 @@ strm_readio :: proc(io: ^Strm_IO) -> ^Strm_Stream {
 		return io.read_stream
 	}
 
-	// Create buffer
-	buf := new(FD_Read_Buffer)
-	buf.fd = io.fd
-	buf.io = io
-	buf.beg = 0
-	buf.end_ = 0
+	// Create read data with bufio.Scanner
+	rd := new(Read_Data)
+	rd.fd = io.fd
+	rd.io_obj = io
+	rd.stream = os.stream_from_handle(io.fd)
+	bufio.scanner_init(&rd.scanner, rd.stream)
 
 	// Mark as reading
 	io.mode += {.Reading}
 
 	// Create producer stream
-	io.read_stream = strm_stream_new(.Producer, stdio_read, read_close, rawptr(buf))
+	io.read_stream = strm_stream_new(.Producer, stdio_read, read_close, rawptr(rd))
 	return io.read_stream
 }
 
