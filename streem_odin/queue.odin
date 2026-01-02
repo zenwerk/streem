@@ -1,5 +1,6 @@
 package streem
 
+import "core:container/queue"
 import "core:sync"
 import "core:thread"
 import "core:os"
@@ -7,6 +8,7 @@ import "core:strconv"
 
 // Thread-safe task queue
 // Reference: src/queue.c, src/atomic.h, src/core.c
+// Refactored to use core:container/queue and core:sync
 
 // Task callback function type
 // Same signature as Stream_Start_Func but used for tasks
@@ -16,21 +18,13 @@ Task_Func :: #type proc(strm: ^Strm_Stream, data: Strm_Value) -> int
 Strm_Task :: struct {
 	func_: Task_Func,
 	data:  Strm_Value,
-	next:  ^Strm_Task,
 }
 
-// Lock-free queue node
-Queue_Node :: struct {
-	value: rawptr,
-	next:  ^Queue_Node,
-}
-
-// Lock-free FIFO queue
-// Uses sentinel node pattern
+// Thread-safe FIFO queue using core:container/queue
+// Wraps the standard queue with mutex for thread safety
 Strm_Queue :: struct {
-	head:  ^Queue_Node,
-	tail:  ^Queue_Node,
-	mutex: sync.Mutex, // Using mutex for safety, can be replaced with lock-free later
+	data:  queue.Queue(rawptr),
+	mutex: sync.Mutex,
 }
 
 // ============================================================================
@@ -50,6 +44,11 @@ prod_queue: ^Strm_Queue = nil
 // Global consumer/filter queue (data processing tasks)
 @(private = "file")
 work_queue: ^Strm_Queue = nil
+
+// Semaphore for worker threads to wait on tasks
+// Posted when a task is added, workers wait on this
+@(private = "file")
+task_sema: sync.Sema
 
 // Worker threads array
 @(private = "file")
@@ -79,7 +78,6 @@ strm_task_new :: proc(func_: Task_Func, data: Strm_Value) -> ^Strm_Task {
 	task := new(Strm_Task)
 	task.func_ = func_
 	task.data = data
-	task.next = nil
 	return task
 }
 
@@ -120,46 +118,29 @@ strm_task_add :: proc(strm: ^Strm_Stream, task: ^Strm_Task) {
 	} else {
 		strm_queue_add(work_queue, strm)
 	}
+
+	// Signal waiting workers that a task is available
+	sync.sema_post(&task_sema)
 }
 
 // ============================================================================
 // Queue operations
 // ============================================================================
 
-// Create a new queue with sentinel node
+// Create a new queue using core:container/queue
 strm_queue_new :: proc() -> ^Strm_Queue {
 	q := new(Strm_Queue)
-
-	// Create sentinel node
-	sentinel := new(Queue_Node)
-	sentinel.value = nil
-	sentinel.next = nil
-
-	q.head = sentinel
-	q.tail = sentinel
-
+	queue.init(&q.data)
 	return q
 }
 
-// Destroy a queue (only frees queue structure and nodes, not node values)
-// This is the safe version that doesn't assume what type the values are
+// Destroy a queue (only frees queue structure, not node values)
+// Values are managed elsewhere (streams or tasks)
 strm_queue_destroy :: proc(q: ^Strm_Queue) {
 	if q == nil {
 		return
 	}
-
-	// Free all remaining nodes (but not the values - they are managed elsewhere)
-	node := q.head
-	for node != nil {
-		next := node.next
-		// Note: We don't free node.value here because:
-		// - For global queues (prod_queue, work_queue), values are ^Strm_Stream which are freed elsewhere
-		// - For stream queues (strm.queue), values are ^Strm_Task
-		// The caller should drain the queue before destroying it if needed
-		free(node)
-		node = next
-	}
-
+	queue.destroy(&q.data)
 	free(q)
 }
 
@@ -170,43 +151,33 @@ strm_task_queue_destroy :: proc(q: ^Strm_Queue) {
 		return
 	}
 
-	// Free all remaining nodes and their task values
-	node := q.head
-	for node != nil {
-		next := node.next
-		if node.value != nil {
-			// Free the task
-			strm_task_destroy(cast(^Strm_Task)node.value)
+	// Free remaining tasks
+	for queue.len(q.data) > 0 {
+		val := queue.pop_front(&q.data)
+		if val != nil {
+			strm_task_destroy(cast(^Strm_Task)val)
 		}
-		free(node)
-		node = next
 	}
 
+	queue.destroy(&q.data)
 	free(q)
 }
 
 // Enqueue (add to tail)
 // Thread-safe using mutex
-// Reference: src/queue.c strm_queue_add
 strm_queue_add :: proc(q: ^Strm_Queue, val: rawptr) {
 	if q == nil {
 		return
 	}
 
-	node := new(Queue_Node)
-	node.value = val
-	node.next = nil
-
 	sync.mutex_lock(&q.mutex)
 	defer sync.mutex_unlock(&q.mutex)
 
-	q.tail.next = node
-	q.tail = node
+	queue.push_back(&q.data, val)
 }
 
 // Dequeue (remove from head)
 // Thread-safe using mutex
-// Reference: src/queue.c strm_queue_get
 strm_queue_get :: proc(q: ^Strm_Queue) -> rawptr {
 	if q == nil {
 		return nil
@@ -215,23 +186,11 @@ strm_queue_get :: proc(q: ^Strm_Queue) -> rawptr {
 	sync.mutex_lock(&q.mutex)
 	defer sync.mutex_unlock(&q.mutex)
 
-	node := q.head
-	new_head := node.next
-
-	if new_head == nil {
-		return nil // queue is empty
+	if queue.len(q.data) == 0 {
+		return nil
 	}
 
-	val := new_head.value
-	q.head = new_head
-
-	// Free old head (sentinel)
-	free(node)
-
-	// Clear value from new head (it becomes the new sentinel)
-	new_head.value = nil
-
-	return val
+	return queue.pop_front(&q.data)
 }
 
 // Check if queue is empty
@@ -239,8 +198,7 @@ strm_queue_empty_p :: proc(q: ^Strm_Queue) -> bool {
 	if q == nil {
 		return true
 	}
-	// In sentinel-based queue, empty when head.next is nil
-	return q.head.next == nil
+	return queue.len(q.data) == 0
 }
 
 // ============================================================================
@@ -317,6 +275,7 @@ task_exec :: proc(strm: ^Strm_Stream, task: ^Strm_Task) {
 
 // Worker thread function
 // Reference: src/core.c task_loop
+// Uses semaphore waiting instead of busy-wait for efficiency
 @(private = "file")
 task_loop :: proc(t: ^thread.Thread) {
 	for {
@@ -325,8 +284,21 @@ task_loop :: proc(t: ^thread.Thread) {
 			break
 		}
 
+		// Check if all streams are done
+		if strm_stream_count_get() == 0 {
+			break
+		}
+
+		// Wait for a task to be available
+		// sema_wait blocks until a task is posted or woken up for shutdown
+		sync.sema_wait(&task_sema)
+
+		// Re-check stop condition after waking up
+		if workers_should_stop {
+			break
+		}
+
 		// Try work queue first (consumers/filters), then producer queue
-		// Note: C version tries producer first for priority, but we match that behavior
 		strm := cast(^Strm_Stream)strm_queue_get(work_queue)
 		if strm == nil {
 			strm = cast(^Strm_Stream)strm_queue_get(prod_queue)
@@ -347,14 +319,6 @@ task_loop :: proc(t: ^thread.Thread) {
 				atomic_cas(&strm.excl, 1, 0)
 			}
 		}
-
-		// Check if all streams are done
-		if strm_stream_count_get() == 0 {
-			break
-		}
-
-		// Yield to other threads
-		thread.yield()
 	}
 }
 
@@ -399,6 +363,11 @@ worker_init :: proc() {
 worker_cleanup :: proc() {
 	// Signal workers to stop
 	workers_should_stop = true
+
+	// Wake up all waiting workers so they can check the stop flag
+	for _ in 0 ..< worker_max {
+		sync.sema_post(&task_sema)
+	}
 
 	// Wait for all workers to finish
 	for &w in workers {
