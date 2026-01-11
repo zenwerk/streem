@@ -1,3 +1,44 @@
+// ============================================================================
+// value.odin - Streem言語のランタイム値表現（NaN-boxing）
+// ============================================================================
+//
+// 概要:
+//   このファイルはStreem言語における値の表現を実装します。
+//   NaN-boxing技術を使用して、64ビットの中に様々な型の値を格納します。
+//
+// NaN-boxingとは:
+//   IEEE 754浮動小数点数のNaN（Not a Number）表現を利用した技術。
+//   NaNには多くのビットパターンが存在し、そのうち1つだけが「本物のNaN」として
+//   使われるため、残りのパターンを他の型（整数、ポインタ、文字列など）の
+//   エンコードに使用できます。
+//
+//   IEEE 754 倍精度浮動小数点数:
+//   [符号:1bit][指数:11bit][仮数:52bit]
+//
+//   NaN条件: 指数部が全て1（0x7FF）かつ仮数部が非ゼロ
+//
+//   Streemでのタグレイアウト:
+//   [タグ:16bit][ペイロード:48bit]
+//   タグ = 0xFFF0 〜 0xFFFF（NaN空間内）
+//
+// タグの種類:
+//   0xFFF0 (Nan)      - 実際のNaN値
+//   0xFFF1 (Bool)     - 真偽値（0=false, 1=true）
+//   0xFFF2 (Int)      - 32ビット符号付き整数
+//   0xFFF3 (List)     - リスト（未使用？）
+//   0xFFF4 (Array)    - 配列
+//   0xFFF5 (Struct)   - 構造体（名前付き配列）
+//   0xFFF7 (String_I) - インターン文字列（短い、インライン）
+//   0xFFF8 (String_6) - 6バイト文字列（インライン）
+//   0xFFF9 (String_O) - 所有文字列（ヒープ割り当て）
+//   0xFFFA (String_F) - 外部/静的文字列
+//   0xFFFB (Cfunc)    - C関数ポインタ
+//   0xFFFD (Ptr)      - オブジェクトポインタ（Stream, Lambda, IO等）
+//   0xFFFF (Foreign)  - 外部ポインタ
+//
+// 参照: src/strm.h, src/value.c
+// ============================================================================
+
 package streem
 
 import "core:fmt"
@@ -5,148 +46,412 @@ import "core:math"
 import "core:strings"
 import "core:unicode"
 
-// Runtime value representation using NaN-boxing
-// Reference: src/strm.h, src/value.c
+// ============================================================================
+// 値タグの定義
+// ============================================================================
 
-// NaN-boxing tag layout (upper 16 bits when NaN):
-// 0xFFF0 | tag_id << 48
+// ----------------------------------------------------------------------------
+// Value_Tag - NaN-boxingのタグ列挙型
+// ----------------------------------------------------------------------------
+// 説明:
+//   64ビット値の上位16ビットに格納されるタグ。
+//   値の型を識別するために使用します。
 //
-// Tags:
-// - STRM_TAG_NAN      = 0xFFF0 (actual NaN)
-// - STRM_TAG_BOOL     = 0xFFF1
-// - STRM_TAG_INT      = 0xFFF2
-// - STRM_TAG_LIST     = 0xFFF3
-// - STRM_TAG_ARRAY    = 0xFFF4
-// - STRM_TAG_STRUCT   = 0xFFF5
-// - STRM_TAG_STRING_I = 0xFFF7 (interned)
-// - STRM_TAG_STRING_6 = 0xFFF8 (short, inline)
-// - STRM_TAG_STRING_O = 0xFFF9 (owned)
-// - STRM_TAG_STRING_F = 0xFFFA (foreign/static)
-// - STRM_TAG_CFUNC    = 0xFFFB
-// - STRM_TAG_PTR      = 0xFFFD
-// - STRM_TAG_FOREIGN  = 0xFFFF
-
-// Value tags
+// メモリレイアウト:
+//   [63:48 タグ][47:0 ペイロード]
+//
+// 例:
+//   整数42の場合: [0xFFF2][0x00000000002A]
+//   真偽値trueの場合: [0xFFF1][0x000000000001]
+// ----------------------------------------------------------------------------
 Value_Tag :: enum u16 {
-	Nan      = 0xFFF0, // actual NaN
-	Bool     = 0xFFF1,
-	Int      = 0xFFF2,
-	List     = 0xFFF3,
-	Array    = 0xFFF4,
-	Struct   = 0xFFF5,
-	String_I = 0xFFF7, // interned string
-	String_6 = 0xFFF8, // short string (<=6 bytes inline)
-	String_O = 0xFFF9, // owned string
-	String_F = 0xFFFA, // foreign/static string
-	Cfunc    = 0xFFFB,
-	Ptr      = 0xFFFD,
-	Foreign  = 0xFFFF,
+	Nan      = 0xFFF0, // 実際のNaN値（浮動小数点数のNaN）
+	Bool     = 0xFFF1, // 真偽値
+	Int      = 0xFFF2, // 32ビット符号付き整数
+	List     = 0xFFF3, // リスト（未使用）
+	Array    = 0xFFF4, // 配列
+	Struct   = 0xFFF5, // 構造体（名前空間付き配列）
+	String_I = 0xFFF7, // インターン文字列（短い、インライン格納）
+	String_6 = 0xFFF8, // 6バイト文字列（インライン格納）
+	String_O = 0xFFF9, // 所有文字列（ヒープ割り当て）
+	String_F = 0xFFFA, // 外部/静的文字列
+	Cfunc    = 0xFFFB, // C関数ポインタ
+	Ptr      = 0xFFFD, // オブジェクトポインタ
+	Foreign  = 0xFFFF, // 外部ポインタ
 }
 
-// Pointer type tags (for STRM_TAG_PTR payloads)
-// These identify what kind of object the pointer points to
+// ----------------------------------------------------------------------------
+// Ptr_Type - ポインタ型タグ
+// ----------------------------------------------------------------------------
+// 説明:
+//   Value_Tag.Ptr でタグ付けされた値が指すオブジェクトの種類を識別します。
+//   各オブジェクト構造体の最初のフィールドにこの型が格納されます。
+//
+// 使用パターン:
+//   Stream, Lambda, IO等の構造体は、最初のフィールドとしてPtr_Typeを持ち、
+//   ポインタからオブジェクトの種類を判別できるようにします。
+//
+// 例:
+//   Strm_Stream :: struct {
+//       ptr_type: Ptr_Type,  // = .Stream
+//       ...
+//   }
+// ----------------------------------------------------------------------------
 Ptr_Type :: enum u8 {
-	Stream,   // strm_stream
-	Lambda,   // strm_lambda
-	Genfunc,  // generic function reference
-	IO,       // strm_io
-	Aux,      // auxiliary objects with namespace
+	Stream,  // Strm_Stream - ストリームオブジェクト
+	Lambda,  // Strm_Lambda - ラムダ/クロージャ
+	Genfunc, // ジェネリック関数参照
+	IO,      // Strm_IO - 入出力オブジェクト
+	Aux,     // 補助オブジェクト（名前空間付き）
 }
 
-// Streem value - NaN-boxed 64-bit value
+// ----------------------------------------------------------------------------
+// Strm_Value - NaN-boxed 64ビット値
+// ----------------------------------------------------------------------------
+// 説明:
+//   Streem言語のランタイム値を表す基本型。
+//   64ビットの中に整数、浮動小数点数、ポインタ、文字列など
+//   様々な型の値を格納できます。
+//
+// 特性:
+//   - distinct型として定義され、u64との暗黙変換を防止
+//   - 全ての値操作関数はこの型を受け取り/返す
+//   - コピーが安価（64ビット値のコピーのみ）
+// ----------------------------------------------------------------------------
 Strm_Value :: distinct u64
 
-// C function callback type (matches original C signature)
+// ----------------------------------------------------------------------------
+// Strm_Cfunc - C関数コールバック型
+// ----------------------------------------------------------------------------
+// 説明:
+//   組み込み関数のシグネチャを定義します。
+//   元のC言語実装と互換性のある形式です。
+//
+// 引数:
+//   strm - 現在のストリーム（nilの場合もあり）
+//   argc - 引数の数
+//   argv - 引数の配列
+//   ret  - 戻り値を格納するポインタ
+//
+// 戻り値:
+//   STRM_OK (0) - 成功
+//   STRM_NG (-1) - エラー
+// ----------------------------------------------------------------------------
 Strm_Cfunc :: #type proc(strm: ^Strm_Stream, argc: int, argv: []Strm_Value, ret: ^Strm_Value) -> int
 
-// NaN mask for checking tagged values
+// ============================================================================
+// NaN-boxing用マスク定数
+// ============================================================================
+
+// NaNマスク - タグ付き値かどうかを判定
+// 上位12ビットが全て1ならNaN（タグ付き値）
 STRM_NAN_MASK :: 0xFFF0_0000_0000_0000
+
+// タグマスク - 上位16ビットを抽出
 STRM_TAG_MASK :: 0xFFFF_0000_0000_0000
+
+// ペイロードマスク - 下位48ビットを抽出
 STRM_VAL_MASK :: 0x0000_FFFF_FFFF_FFFF
 
 // ============================================================================
-// Value tag extraction
+// 値タグの抽出
 // ============================================================================
 
-// Extract tag from value
+// ----------------------------------------------------------------------------
+// strm_value_tag - 値からタグを抽出
+// ----------------------------------------------------------------------------
+// 説明:
+//   Strm_Valueからタグを抽出し、値の型を判定します。
+//
+// 引数:
+//   v - 検査する値
+//
+// 戻り値:
+//   Value_Tag - 値の型を示すタグ
+//   通常の浮動小数点数の場合は .Nan を返す
+//
+// 動作:
+//   1. 上位12ビットがNaNパターン（0xFFF）でなければ通常のf64
+//   2. NaNパターンの場合、上位16ビットからタグを抽出
+//
+// 使用例:
+//   v := strm_int_value(42)
+//   tag := strm_value_tag(v)  // .Int
+// ----------------------------------------------------------------------------
 strm_value_tag :: proc(v: Strm_Value) -> Value_Tag {
 	bits := u64(v)
-	// Check if it's a tagged value (NaN)
+	// タグ付き値（NaN）かどうかを確認
 	if (bits & STRM_NAN_MASK) != STRM_NAN_MASK {
-		// It's a regular float
+		// 通常の浮動小数点数
 		return .Nan
 	}
 	return Value_Tag((bits >> 48) & 0xFFFF)
 }
 
-// Extract payload from value
+// ----------------------------------------------------------------------------
+// strm_value_val - 値からペイロードを抽出
+// ----------------------------------------------------------------------------
+// 説明:
+//   Strm_Valueから下位48ビットのペイロードを抽出します。
+//   タグに関係なく、値データ部分のみを取得します。
+//
+// 引数:
+//   v - ペイロードを抽出する値
+//
+// 戻り値:
+//   下位48ビットの値（u64として）
+//
+// 使用例:
+//   v := strm_int_value(42)
+//   payload := strm_value_val(v)  // 42
+// ----------------------------------------------------------------------------
 strm_value_val :: proc(v: Strm_Value) -> u64 {
 	return u64(v) & STRM_VAL_MASK
 }
 
 // ============================================================================
-// Value constructors
+// 値コンストラクタ
 // ============================================================================
 
-// Create nil value (PTR tag with 0 payload)
+// ----------------------------------------------------------------------------
+// strm_nil_value - nil値の作成
+// ----------------------------------------------------------------------------
+// 説明:
+//   nil（空/無効）を表す値を作成します。
+//   Ptrタグでペイロードが0の値として表現されます。
+//
+// 戻り値:
+//   nil値を表すStrm_Value
+//
+// 使用例:
+//   result := strm_nil_value()
+//   if strm_nil_p(result) { ... }
+// ----------------------------------------------------------------------------
 strm_nil_value :: proc() -> Strm_Value {
 	return Strm_Value((u64(Value_Tag.Ptr) << 48) | 0)
 }
 
-// Create boolean value
+// ----------------------------------------------------------------------------
+// strm_bool_value - 真偽値の作成
+// ----------------------------------------------------------------------------
+// 説明:
+//   真偽値（true/false）を表すStrm_Valueを作成します。
+//
+// 引数:
+//   b - 真偽値（true または false）
+//
+// 戻り値:
+//   真偽値を表すStrm_Value
+//   true -> ペイロード = 1
+//   false -> ペイロード = 0
+//
+// 使用例:
+//   t := strm_bool_value(true)
+//   f := strm_bool_value(false)
+// ----------------------------------------------------------------------------
 strm_bool_value :: proc(b: bool) -> Strm_Value {
 	val: u64 = b ? 1 : 0
 	return Strm_Value((u64(Value_Tag.Bool) << 48) | val)
 }
 
-// Create integer value (32-bit signed)
+// ----------------------------------------------------------------------------
+// strm_int_value - 整数値の作成
+// ----------------------------------------------------------------------------
+// 説明:
+//   32ビット符号付き整数を表すStrm_Valueを作成します。
+//   負の値は48ビットに符号拡張されます。
+//
+// 引数:
+//   i - 32ビット符号付き整数
+//
+// 戻り値:
+//   整数値を表すStrm_Value
+//
+// 範囲:
+//   -2,147,483,648 〜 2,147,483,647
+//
+// 使用例:
+//   positive := strm_int_value(42)
+//   negative := strm_int_value(-1)
+// ----------------------------------------------------------------------------
 strm_int_value :: proc(i: i32) -> Strm_Value {
-	// Sign-extend to 48 bits if negative
+	// 負の値の場合、48ビットに符号拡張
 	val := u64(u32(i)) & STRM_VAL_MASK
 	return Strm_Value((u64(Value_Tag.Int) << 48) | val)
 }
 
-// Create float value (raw bits, no tag for valid floats)
+// ----------------------------------------------------------------------------
+// strm_float_value - 浮動小数点値の作成
+// ----------------------------------------------------------------------------
+// 説明:
+//   64ビット浮動小数点数を表すStrm_Valueを作成します。
+//   通常の浮動小数点数はNaN空間を使用しないため、
+//   ビットパターンをそのまま使用します。
+//
+// 引数:
+//   f - 64ビット浮動小数点数
+//
+// 戻り値:
+//   浮動小数点値を表すStrm_Value
+//
+// 注意:
+//   NaN値は特殊な扱いが必要（タグ空間と衝突する可能性）
+//
+// 使用例:
+//   pi := strm_float_value(3.14159)
+//   neg := strm_float_value(-2.5)
+// ----------------------------------------------------------------------------
 strm_float_value :: proc(f: f64) -> Strm_Value {
 	return transmute(Strm_Value)f
 }
 
-// Create pointer value
+// ----------------------------------------------------------------------------
+// strm_ptr_value - ポインタ値の作成
+// ----------------------------------------------------------------------------
+// 説明:
+//   オブジェクトへのポインタを表すStrm_Valueを作成します。
+//   Stream, Lambda, IO等のオブジェクトを参照するために使用。
+//
+// 引数:
+//   ptr - オブジェクトへのポインタ
+//
+// 戻り値:
+//   ポインタ値を表すStrm_Value
+//
+// 注意:
+//   ポインタは48ビットに切り詰められます（ほとんどのプラットフォームで十分）
+//
+// 使用例:
+//   stream := new(Strm_Stream)
+//   v := strm_ptr_value(stream)
+// ----------------------------------------------------------------------------
 strm_ptr_value :: proc(ptr: rawptr) -> Strm_Value {
 	val := u64(uintptr(ptr)) & STRM_VAL_MASK
 	return Strm_Value((u64(Value_Tag.Ptr) << 48) | val)
 }
 
-// Create foreign pointer value
+// ----------------------------------------------------------------------------
+// strm_foreign_value - 外部ポインタ値の作成
+// ----------------------------------------------------------------------------
+// 説明:
+//   外部（ユーザー定義）オブジェクトへのポインタを表すStrm_Valueを作成します。
+//   Streemが所有しないオブジェクトを参照するために使用。
+//
+// 引数:
+//   ptr - 外部オブジェクトへのポインタ
+//
+// 戻り値:
+//   外部ポインタ値を表すStrm_Value
+//
+// 使用例:
+//   user_data := some_external_data()
+//   v := strm_foreign_value(user_data)
+// ----------------------------------------------------------------------------
 strm_foreign_value :: proc(ptr: rawptr) -> Strm_Value {
 	val := u64(uintptr(ptr)) & STRM_VAL_MASK
 	return Strm_Value((u64(Value_Tag.Foreign) << 48) | val)
 }
 
-// Create C function value
+// ----------------------------------------------------------------------------
+// strm_cfunc_value - C関数値の作成
+// ----------------------------------------------------------------------------
+// 説明:
+//   組み込み関数へのポインタを表すStrm_Valueを作成します。
+//   Streem言語から呼び出し可能な関数として登録されます。
+//
+// 引数:
+//   f - Strm_Cfuncシグネチャに従う関数ポインタ
+//
+// 戻り値:
+//   C関数値を表すStrm_Value
+//
+// 使用例:
+//   my_func :: proc(strm: ^Strm_Stream, argc: int, argv: []Strm_Value, ret: ^Strm_Value) -> int {
+//       ret^ = strm_int_value(42)
+//       return STRM_OK
+//   }
+//   v := strm_cfunc_value(my_func)
+// ----------------------------------------------------------------------------
 strm_cfunc_value :: proc(f: Strm_Cfunc) -> Strm_Value {
 	val := u64(uintptr(rawptr(f))) & STRM_VAL_MASK
 	return Strm_Value((u64(Value_Tag.Cfunc) << 48) | val)
 }
 
 // ============================================================================
-// Value extractors
+// 値エクストラクタ
 // ============================================================================
 
-// Extract boolean from value
+// ----------------------------------------------------------------------------
+// strm_value_bool - 真偽値の抽出
+// ----------------------------------------------------------------------------
+// 説明:
+//   Strm_Valueから真偽値を抽出します。
+//   ペイロードが0ならfalse、それ以外ならtrue。
+//
+// 引数:
+//   v - 真偽値を含むStrm_Value
+//
+// 戻り値:
+//   抽出された真偽値
+//
+// 前提:
+//   vがBoolタグを持つこと（呼び出し前にstrm_bool_p()で確認推奨）
+//
+// 使用例:
+//   v := strm_bool_value(true)
+//   b := strm_value_bool(v)  // true
+// ----------------------------------------------------------------------------
 strm_value_bool :: proc(v: Strm_Value) -> bool {
 	return strm_value_val(v) != 0
 }
 
-// Extract integer from value
+// ----------------------------------------------------------------------------
+// strm_value_int - 整数値の抽出
+// ----------------------------------------------------------------------------
+// 説明:
+//   Strm_Valueから32ビット符号付き整数を抽出します。
+//   48ビットペイロードから32ビットに切り詰め、符号を復元します。
+//
+// 引数:
+//   v - 整数値を含むStrm_Value
+//
+// 戻り値:
+//   抽出された32ビット整数
+//
+// 前提:
+//   vがIntタグを持つこと（呼び出し前にstrm_int_p()で確認推奨）
+//
+// 使用例:
+//   v := strm_int_value(-42)
+//   i := strm_value_int(v)  // -42
+// ----------------------------------------------------------------------------
 strm_value_int :: proc(v: Strm_Value) -> i32 {
 	val := strm_value_val(v)
-	// Sign-extend from 32 bits
+	// 32ビットから符号拡張
 	return i32(u32(val))
 }
 
-// Extract float from value
-// Also handles int values by converting them to float
+// ----------------------------------------------------------------------------
+// strm_value_float - 浮動小数点値の抽出
+// ----------------------------------------------------------------------------
+// 説明:
+//   Strm_Valueから64ビット浮動小数点数を抽出します。
+//   整数値の場合は自動的にfloatに変換します。
+//
+// 引数:
+//   v - 数値を含むStrm_Value
+//
+// 戻り値:
+//   抽出された浮動小数点数
+//   整数の場合はf64に変換された値
+//
+// 使用例:
+//   f := strm_float_value(3.14)
+//   val := strm_value_float(f)  // 3.14
+//
+//   i := strm_int_value(42)
+//   val := strm_value_float(i)  // 42.0
+// ----------------------------------------------------------------------------
 strm_value_float :: proc(v: Strm_Value) -> f64 {
 	if strm_int_p(v) {
 		return f64(strm_value_int(v))
@@ -154,35 +459,120 @@ strm_value_float :: proc(v: Strm_Value) -> f64 {
 	return transmute(f64)v
 }
 
-// Extract pointer from value (generic version)
+// ----------------------------------------------------------------------------
+// strm_value_ptr - 型付きポインタの抽出
+// ----------------------------------------------------------------------------
+// 説明:
+//   Strm_Valueから指定した型のポインタを抽出します。
+//   ジェネリック版で、型安全なキャストを行います。
+//
+// 引数:
+//   v - ポインタ値を含むStrm_Value
+//   T - 抽出するポインタの型（コンパイル時定数）
+//
+// 戻り値:
+//   指定した型へのポインタ
+//
+// 使用例:
+//   v := strm_ptr_value(stream)
+//   s := strm_value_ptr(v, Strm_Stream)  // ^Strm_Stream
+// ----------------------------------------------------------------------------
 strm_value_ptr :: proc(v: Strm_Value, $T: typeid) -> ^T {
 	val := strm_value_val(v)
 	return cast(^T)uintptr(val)
 }
 
-// Extract raw pointer from value
+// ----------------------------------------------------------------------------
+// strm_value_rawptr - 生ポインタの抽出
+// ----------------------------------------------------------------------------
+// 説明:
+//   Strm_Valueから型なしの生ポインタを抽出します。
+//
+// 引数:
+//   v - ポインタ値を含むStrm_Value
+//
+// 戻り値:
+//   生ポインタ（rawptr）
+//
+// 使用例:
+//   v := strm_ptr_value(some_object)
+//   ptr := strm_value_rawptr(v)
+// ----------------------------------------------------------------------------
 strm_value_rawptr :: proc(v: Strm_Value) -> rawptr {
 	val := strm_value_val(v)
 	return rawptr(uintptr(val))
 }
 
-// Extract C function from value
+// ----------------------------------------------------------------------------
+// strm_value_cfunc - C関数ポインタの抽出
+// ----------------------------------------------------------------------------
+// 説明:
+//   Strm_ValueからC関数ポインタを抽出します。
+//
+// 引数:
+//   v - C関数値を含むStrm_Value
+//
+// 戻り値:
+//   Strm_Cfunc型の関数ポインタ
+//
+// 前提:
+//   vがCfuncタグを持つこと
+//
+// 使用例:
+//   v := strm_cfunc_value(my_func)
+//   f := strm_value_cfunc(v)
+//   result := f(nil, 0, nil, &ret)  // 関数を呼び出し
+// ----------------------------------------------------------------------------
 strm_value_cfunc :: proc(v: Strm_Value) -> Strm_Cfunc {
 	val := strm_value_val(v)
 	return cast(Strm_Cfunc)rawptr(uintptr(val))
 }
 
-// Extract foreign pointer from value
+// ----------------------------------------------------------------------------
+// strm_value_foreign - 外部ポインタの抽出
+// ----------------------------------------------------------------------------
+// 説明:
+//   Strm_Valueから外部オブジェクトへのポインタを抽出します。
+//
+// 引数:
+//   v - 外部ポインタ値を含むStrm_Value
+//
+// 戻り値:
+//   外部オブジェクトへの生ポインタ
+//
+// 使用例:
+//   v := strm_foreign_value(user_data)
+//   data := strm_value_foreign(v)
+// ----------------------------------------------------------------------------
 strm_value_foreign :: proc(v: Strm_Value) -> rawptr {
 	val := strm_value_val(v)
 	return rawptr(uintptr(val))
 }
 
 // ============================================================================
-// Type predicates
+// 型述語（Type Predicates）
 // ============================================================================
 
-// Check if value is nil
+// ----------------------------------------------------------------------------
+// strm_nil_p - nil判定
+// ----------------------------------------------------------------------------
+// 説明:
+//   値がnilかどうかを判定します。
+//   Ptrタグでペイロードが0の場合にtrue。
+//
+// 引数:
+//   v - 検査する値
+//
+// 戻り値:
+//   true - 値がnil
+//   false - 値がnilでない
+//
+// 使用例:
+//   result := some_function()
+//   if strm_nil_p(result) {
+//       // エラー処理
+//   }
+// ----------------------------------------------------------------------------
 strm_nil_p :: proc(v: Strm_Value) -> bool {
 	tag := strm_value_tag(v)
 	if tag != .Ptr {
@@ -191,32 +581,98 @@ strm_nil_p :: proc(v: Strm_Value) -> bool {
 	return strm_value_val(v) == 0
 }
 
-// Check if value is boolean
+// ----------------------------------------------------------------------------
+// strm_bool_p - 真偽値判定
+// ----------------------------------------------------------------------------
+// 説明:
+//   値が真偽値かどうかを判定します。
+//
+// 引数:
+//   v - 検査する値
+//
+// 戻り値:
+//   true - 値が真偽値
+//   false - 値が真偽値でない
+// ----------------------------------------------------------------------------
 strm_bool_p :: proc(v: Strm_Value) -> bool {
 	return strm_value_tag(v) == .Bool
 }
 
-// Check if value is integer
+// ----------------------------------------------------------------------------
+// strm_int_p - 整数判定
+// ----------------------------------------------------------------------------
+// 説明:
+//   値が整数かどうかを判定します。
+//
+// 引数:
+//   v - 検査する値
+//
+// 戻り値:
+//   true - 値が整数
+//   false - 値が整数でない
+// ----------------------------------------------------------------------------
 strm_int_p :: proc(v: Strm_Value) -> bool {
 	return strm_value_tag(v) == .Int
 }
 
-// Check if value is float
+// ----------------------------------------------------------------------------
+// strm_float_p - 浮動小数点数判定
+// ----------------------------------------------------------------------------
+// 説明:
+//   値が浮動小数点数かどうかを判定します。
+//   NaN値も浮動小数点数として扱います。
+//
+// 引数:
+//   v - 検査する値
+//
+// 戻り値:
+//   true - 値が浮動小数点数（NaNを含む）
+//   false - 値が浮動小数点数でない
+//
+// 判定ロジック:
+//   - タグがNanの場合: true（実際のNaN値）
+//   - 上位ビットがNaNパターンでない場合: true（通常のf64）
+// ----------------------------------------------------------------------------
 strm_float_p :: proc(v: Strm_Value) -> bool {
 	bits := u64(v)
-	// A value is a float if it's NOT a tagged value
-	// (i.e., top bits don't match NaN pattern)
-	// Also handle actual NaN
+	// 値が浮動小数点数なのは、タグ付き値でない場合
+	// （つまり、上位ビットがNaNパターンと一致しない）
+	// また、実際のNaNも処理
 	tag := strm_value_tag(v)
 	return tag == .Nan || (bits & STRM_NAN_MASK) != STRM_NAN_MASK
 }
 
-// Check if value is number (int or float)
+// ----------------------------------------------------------------------------
+// strm_number_p - 数値判定
+// ----------------------------------------------------------------------------
+// 説明:
+//   値が数値（整数または浮動小数点数）かどうかを判定します。
+//
+// 引数:
+//   v - 検査する値
+//
+// 戻り値:
+//   true - 値が数値
+//   false - 値が数値でない
+// ----------------------------------------------------------------------------
 strm_number_p :: proc(v: Strm_Value) -> bool {
 	return strm_int_p(v) || strm_float_p(v)
 }
 
-// Check if value is string (any string type)
+// ----------------------------------------------------------------------------
+// strm_string_p - 文字列判定
+// ----------------------------------------------------------------------------
+// 説明:
+//   値が文字列（任意の文字列型）かどうかを判定します。
+//   String_I, String_6, String_O, String_F のいずれかにマッチ。
+//
+// 引数:
+//   v - 検査する値
+//
+// 戻り値:
+//   true - 値が文字列
+//   false - 値が文字列でない
+// ----------------------------------------------------------------------------
 strm_string_p :: proc(v: Strm_Value) -> bool {
 	tag := strm_value_tag(v)
 	#partial switch tag {
@@ -226,17 +682,60 @@ strm_string_p :: proc(v: Strm_Value) -> bool {
 	return false
 }
 
-// Check if value is array
+// ----------------------------------------------------------------------------
+// strm_array_p - 配列判定
+// ----------------------------------------------------------------------------
+// 説明:
+//   値が配列かどうかを判定します。
+//
+// 引数:
+//   v - 検査する値
+//
+// 戻り値:
+//   true - 値が配列
+//   false - 値が配列でない
+// ----------------------------------------------------------------------------
 strm_array_p :: proc(v: Strm_Value) -> bool {
 	return strm_value_tag(v) == .Array
 }
 
-// Check if value is struct
+// ----------------------------------------------------------------------------
+// strm_struct_p - 構造体判定
+// ----------------------------------------------------------------------------
+// 説明:
+//   値が構造体（名前空間付き配列）かどうかを判定します。
+//
+// 引数:
+//   v - 検査する値
+//
+// 戻り値:
+//   true - 値が構造体
+//   false - 値が構造体でない
+// ----------------------------------------------------------------------------
 strm_struct_p :: proc(v: Strm_Value) -> bool {
 	return strm_value_tag(v) == .Struct
 }
 
-// Check if value is a pointer with specific type tag
+// ----------------------------------------------------------------------------
+// strm_ptr_tag_p - ポインタ型タグの判定
+// ----------------------------------------------------------------------------
+// 説明:
+//   Ptrタグを持つ値が特定のオブジェクト型を指しているかを判定します。
+//   オブジェクト構造体の最初のフィールド（Ptr_Type）を検査します。
+//
+// 引数:
+//   v             - 検査する値
+//   expected_type - 期待するPtr_Type
+//
+// 戻り値:
+//   true - 値が期待する型のオブジェクトを指している
+//   false - それ以外
+//
+// 動作:
+//   1. Ptrタグでなければfalse
+//   2. ポインタがnilならfalse
+//   3. オブジェクトの最初のフィールドとexpected_typeを比較
+// ----------------------------------------------------------------------------
 strm_ptr_tag_p :: proc(v: Strm_Value, expected_type: Ptr_Type) -> bool {
 	if strm_value_tag(v) != .Ptr {
 		return false
@@ -245,38 +744,113 @@ strm_ptr_tag_p :: proc(v: Strm_Value, expected_type: Ptr_Type) -> bool {
 	if ptr == nil {
 		return false
 	}
-	// The first field of any ptr-tagged object is Ptr_Type
+	// Ptr_Typeタグ付きオブジェクトの最初のフィールドはPtr_Type
 	obj_type := (cast(^Ptr_Type)ptr)^
 	return obj_type == expected_type
 }
 
-// Check if value is lambda (checked via Ptr to lambda struct)
+// ----------------------------------------------------------------------------
+// strm_lambda_p - ラムダ判定
+// ----------------------------------------------------------------------------
+// 説明:
+//   値がラムダ（クロージャ）かどうかを判定します。
+//
+// 引数:
+//   v - 検査する値
+//
+// 戻り値:
+//   true - 値がラムダ
+//   false - 値がラムダでない
+// ----------------------------------------------------------------------------
 strm_lambda_p :: proc(v: Strm_Value) -> bool {
 	return strm_ptr_tag_p(v, .Lambda)
 }
 
-// Check if value is stream (checked via Ptr to stream struct)
+// ----------------------------------------------------------------------------
+// strm_stream_p - ストリーム判定
+// ----------------------------------------------------------------------------
+// 説明:
+//   値がストリームオブジェクトかどうかを判定します。
+//
+// 引数:
+//   v - 検査する値
+//
+// 戻り値:
+//   true - 値がストリーム
+//   false - 値がストリームでない
+// ----------------------------------------------------------------------------
 strm_stream_p :: proc(v: Strm_Value) -> bool {
 	return strm_ptr_tag_p(v, .Stream)
 }
 
-// Check if value is IO (checked via Ptr to IO struct)
+// ----------------------------------------------------------------------------
+// strm_io_p - IOオブジェクト判定
+// ----------------------------------------------------------------------------
+// 説明:
+//   値がIOオブジェクト（ファイル、標準入出力等）かどうかを判定します。
+//
+// 引数:
+//   v - 検査する値
+//
+// 戻り値:
+//   true - 値がIOオブジェクト
+//   false - 値がIOオブジェクトでない
+// ----------------------------------------------------------------------------
 strm_io_p :: proc(v: Strm_Value) -> bool {
 	return strm_ptr_tag_p(v, .IO)
 }
 
-// Check if value is C function
+// ----------------------------------------------------------------------------
+// strm_cfunc_p - C関数判定
+// ----------------------------------------------------------------------------
+// 説明:
+//   値がC関数ポインタかどうかを判定します。
+//
+// 引数:
+//   v - 検査する値
+//
+// 戻り値:
+//   true - 値がC関数
+//   false - 値がC関数でない
+// ----------------------------------------------------------------------------
 strm_cfunc_p :: proc(v: Strm_Value) -> bool {
 	return strm_value_tag(v) == .Cfunc
 }
 
 // ============================================================================
-// Value equality and conversion
+// 値の等価性と変換
 // ============================================================================
 
-// Compare two values for equality
+// ----------------------------------------------------------------------------
+// strm_value_eq - 値の等価比較
+// ----------------------------------------------------------------------------
+// 説明:
+//   2つの値が等しいかどうかを比較します。
+//   型に応じた適切な比較を行います。
+//
+// 引数:
+//   a - 比較する値1
+//   b - 比較する値2
+//
+// 戻り値:
+//   true - 値が等しい
+//   false - 値が等しくない
+//
+// 比較ルール:
+//   1. ビットパターンが同一 → true（最速パス）
+//   2. 配列/構造体 → 要素ごとの深い比較
+//   3. 文字列 → 内容比較
+//   4. C関数 → ポインタ比較
+//   5. ポインタ → アドレス比較
+//   6. 数値 → float変換後比較（int vs float対応）
+//
+// 使用例:
+//   a := strm_int_value(42)
+//   b := strm_float_value(42.0)
+//   strm_value_eq(a, b)  // true（数値として等しい）
+// ----------------------------------------------------------------------------
 strm_value_eq :: proc(a: Strm_Value, b: Strm_Value) -> bool {
-	// Fast path: identical bit patterns
+	// 高速パス: ビットパターンが同一
 	if u64(a) == u64(b) {
 		return true
 	}
@@ -284,29 +858,29 @@ strm_value_eq :: proc(a: Strm_Value, b: Strm_Value) -> bool {
 	tag_a := strm_value_tag(a)
 	tag_b := strm_value_tag(b)
 
-	// Handle array and struct comparison
+	// 配列と構造体の比較を処理
 	if tag_a == .Array || tag_a == .Struct {
 		if tag_b == .Array || tag_b == .Struct {
 			return strm_ary_eq(Strm_Array(a), Strm_Array(b))
 		}
 	}
 
-	// Handle string comparison
+	// 文字列比較を処理
 	if strm_string_p(a) && strm_string_p(b) {
 		return strm_str_eq(Strm_String(a), Strm_String(b))
 	}
 
-	// Handle cfunc comparison
+	// cfunc比較を処理
 	if tag_a == .Cfunc && tag_b == .Cfunc {
 		return strm_value_cfunc(a) == strm_value_cfunc(b)
 	}
 
-	// Handle pointer comparison
+	// ポインタ比較を処理
 	if tag_a == .Ptr && tag_b == .Ptr {
 		return strm_value_rawptr(a) == strm_value_rawptr(b)
 	}
 
-	// Handle numeric comparison (int vs float)
+	// 数値比較を処理（int vs float）
 	if strm_number_p(a) && strm_number_p(b) {
 		return strm_value_float(a) == strm_value_float(b)
 	}
@@ -314,7 +888,35 @@ strm_value_eq :: proc(a: Strm_Value, b: Strm_Value) -> bool {
 	return false
 }
 
-// Convert value to string representation
+// ----------------------------------------------------------------------------
+// strm_to_str - 値を文字列に変換
+// ----------------------------------------------------------------------------
+// 説明:
+//   Strm_Valueを人間が読める文字列表現に変換します。
+//   出力用（printなど）に使用されます。
+//
+// 引数:
+//   v         - 変換する値
+//   allocator - 文字列割り当て用アロケータ
+//
+// 戻り値:
+//   値の文字列表現（呼び出し側で解放が必要）
+//
+// 変換ルール:
+//   - Int: 10進数表記（例: "42", "-1"）
+//   - Bool: "true" または "false"
+//   - Cfunc: "<cfunc:アドレス>"
+//   - 文字列: そのまま（引用符なし）
+//   - 配列/構造体: inspect形式
+//   - Ptr(nil): "nil"
+//   - Ptr(オブジェクト): "<型:アドレス>"
+//   - Float: 精度14桁の数値、NaN/Inf/−Infは特殊表記
+//
+// 使用例:
+//   v := strm_int_value(42)
+//   s := strm_to_str(v)  // "42"
+//   defer delete(s)
+// ----------------------------------------------------------------------------
 strm_to_str :: proc(v: Strm_Value, allocator := context.allocator) -> string {
 	context.allocator = allocator
 
@@ -359,7 +961,7 @@ strm_to_str :: proc(v: Strm_Value, allocator := context.allocator) -> string {
 		}
 
 	case:
-		// Float or other
+		// Floatまたはその他
 		if strm_float_p(v) {
 			f := strm_value_float(v)
 			if math.is_nan(f) {
@@ -375,30 +977,74 @@ strm_to_str :: proc(v: Strm_Value, allocator := context.allocator) -> string {
 	}
 }
 
-// Debug representation of value (with escaping for strings, etc.)
+// ----------------------------------------------------------------------------
+// strm_inspect - 値のデバッグ用文字列表現
+// ----------------------------------------------------------------------------
+// 説明:
+//   Strm_Valueをデバッグ用の詳細な文字列表現に変換します。
+//   文字列は引用符で囲まれ、特殊文字はエスケープされます。
+//
+// 引数:
+//   v         - 変換する値
+//   allocator - 文字列割り当て用アロケータ
+//
+// 戻り値:
+//   値のデバッグ用文字列表現（呼び出し側で解放が必要）
+//
+// strm_to_strとの違い:
+//   - 文字列は引用符で囲まれる: "hello" vs hello
+//   - 特殊文字がエスケープされる: \n, \t, \", \\, \x00等
+//
+// 使用例:
+//   s := strm_str_new("hello\nworld")
+//   debug := strm_inspect(strm_str_value(s))
+//   // "hello\nworld" （引用符付き、改行がエスケープ）
+// ----------------------------------------------------------------------------
 strm_inspect :: proc(v: Strm_Value, allocator := context.allocator) -> string {
 	context.allocator = allocator
 
 	tag := strm_value_tag(v)
 
-	// For strings, add quotes and escape special characters
+	// 文字列は引用符を追加し、特殊文字をエスケープ
 	if strm_string_p(v) {
 		str := Strm_String(v)
 		s := strm_str_to_string(str, allocator)
 		return fmt.aprintf("\"%s\"", str_escape(s, allocator))
 	}
 
-	// For arrays/structs, format with brackets
+	// 配列/構造体はブラケット付きでフォーマット
 	if tag == .Array || tag == .Struct {
 		ary := Strm_Array(v)
 		return ary_inspect(ary, allocator)
 	}
 
-	// For other types, use normal string conversion
+	// その他の型は通常の文字列変換を使用
 	return strm_to_str(v, allocator)
 }
 
-// Escape special characters in string for inspect
+// ----------------------------------------------------------------------------
+// str_escape - 文字列の特殊文字エスケープ
+// ----------------------------------------------------------------------------
+// 説明:
+//   文字列内の特殊文字をエスケープシーケンスに変換します。
+//   inspect出力用の内部関数。
+//
+// 引数:
+//   s         - エスケープする文字列
+//   allocator - 結果文字列用アロケータ
+//
+// 戻り値:
+//   エスケープされた文字列
+//
+// エスケープ対象:
+//   \n → \\n（改行）
+//   \r → \\r（キャリッジリターン）
+//   \t → \\t（タブ）
+//   " → \\"（引用符）
+//   \ → \\\\（バックスラッシュ）
+//   \0 → \\0（Null）
+//   制御文字 → \\xHH（16進数）
+// ----------------------------------------------------------------------------
 @(private)
 str_escape :: proc(s: string, allocator := context.allocator) -> string {
 	context.allocator = allocator
@@ -420,8 +1066,10 @@ str_escape :: proc(s: string, allocator := context.allocator) -> string {
 			strings.write_string(&builder, "\\0")
 		case:
 			if c >= 0x20 && c < 0x7F {
+				// 印刷可能ASCII文字
 				strings.write_rune(&builder, c)
 			} else {
+				// 制御文字や非ASCII → 16進数エスケープ
 				fmt.sbprintf(&builder, "\\x%02x", u32(c))
 			}
 		}
@@ -430,7 +1078,27 @@ str_escape :: proc(s: string, allocator := context.allocator) -> string {
 	return strings.to_string(builder)
 }
 
-// Format array for inspect
+// ----------------------------------------------------------------------------
+// ary_inspect - 配列のデバッグ用文字列表現
+// ----------------------------------------------------------------------------
+// 説明:
+//   配列をデバッグ用の文字列表現に変換します。
+//   名前空間、ヘッダー（フィールド名）も含めて表示。
+//
+// 引数:
+//   ary       - 表示する配列
+//   allocator - 文字列割り当て用アロケータ
+//
+// 戻り値:
+//   配列のデバッグ用文字列
+//
+// フォーマット:
+//   - 空配列: "[]"
+//   - 単純配列: "[1, 2, 3]"
+//   - 名前空間付き: "[@Point 10, 20]"
+//   - ヘッダー付き: "[x:10, y:20]"
+//   - 両方: "[@Point x:10, y:20]"
+// ----------------------------------------------------------------------------
 @(private)
 ary_inspect :: proc(ary: Strm_Array, allocator := context.allocator) -> string {
 	context.allocator = allocator
@@ -442,7 +1110,7 @@ ary_inspect :: proc(ary: Strm_Array, allocator := context.allocator) -> string {
 	builder := strings.builder_make(allocator)
 	strings.write_string(&builder, "[")
 
-	// Check for namespace
+	// 名前空間をチェック
 	ns := strm_ary_ns(ary)
 	if ns != nil && u64(ns.name) != 0 {
 		strings.write_string(&builder, "@")
@@ -463,7 +1131,7 @@ ary_inspect :: proc(ary: Strm_Array, allocator := context.allocator) -> string {
 			strings.write_string(&builder, ", ")
 		}
 
-		// Check for header (field name)
+		// ヘッダー（フィールド名）をチェック
 		if headers_ptr != nil && i < strm_ary_len(headers) {
 			header_val := headers_ptr[i]
 			if strm_string_p(header_val) {
@@ -474,7 +1142,7 @@ ary_inspect :: proc(ary: Strm_Array, allocator := context.allocator) -> string {
 			}
 		}
 
-		// Write element value
+		// 要素の値を書き込み
 		elem_str := strm_inspect(ptr[i], allocator)
 		strings.write_string(&builder, elem_str)
 	}
