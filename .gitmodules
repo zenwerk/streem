@@ -1,0 +1,3 @@
+[submodule "llpgen"]
+	path = llpgen
+	url = git@github.com:zenwerk/llpgen.git
